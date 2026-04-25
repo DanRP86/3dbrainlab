@@ -583,7 +583,13 @@ function BrainSculpture() {
   );
 }
 
-export default function VisualBrain() {
+export default function VisualBrain({ 
+  activeNodes, 
+  isThinking 
+}: { 
+  activeNodes: number[], 
+  isThinking: boolean 
+}) {
   return (
     <div
       style={{
