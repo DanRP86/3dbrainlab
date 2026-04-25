@@ -8,14 +8,16 @@
     "start": "next start",
     "lint": "next lint"
   },
- "dependencies": {
-  "next": "15.1.11",
-  "react": "19.0.0",
-  "react-dom": "19.0.0",
-  "three": "0.170.0",
-  "@react-three/fiber": "9.0.0-rc.0",
-  "@react-three/drei": "9.121.4",
-  "@react-three/postprocessing": "2.16.5"
+  "dependencies": {
+    "next": "15.1.11",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "three": "0.170.0",
+    "@react-three/fiber": "9.0.0-rc.0",
+    "@react-three/drei": "9.121.4",
+    "@react-three/postprocessing": "2.16.5",
+    "openai": "^4.71.1",
+    "nodemailer": "^6.9.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
@@ -31,7 +33,7 @@
   "overrides": {
     "react": "$react",
     "react-dom": "$react-dom",
-    "@types/react": "$@types/react",
-    "@types/react-dom": "$@types/react-dom"
+    "three": "$three",
+    "@react-three/fiber": "$@react-three/fiber"
   }
 }
