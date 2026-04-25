@@ -3,9 +3,7 @@
 import React, { useRef, useMemo, Suspense, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Html, OrbitControls } from "@react-three/drei";
-import { EffectComposer, Bloom, Noise } from "@react-three/postprocessing";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 const CONCEPTS = [
   { id: 0, label: "PMI", dir: [1, 0.2, 0.5], color: "#8fe9ff" },
@@ -88,7 +86,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
         uniforms={{
           uTime: { value: 0 }, uProgress: { value: 0 }, uEnergy: { value: 0 },
           uColor: { value: new THREE.Color(color) }, uMode: { value: kind === "probe" ? 0 : 1 },
-          uThickness: { value: kind === "probe" ? 2.8 : 5.0 }, uSeed: { value: seed },
+          uThickness: { value: kind === "probe" ? 3.5 : 6.0 }, uSeed: { value: seed }, // Tamaños aumentados
         }}
         vertexShader={`
           uniform float uTime; uniform float uProgress; uniform float uEnergy; uniform float uMode; uniform float uThickness; uniform float uSeed;
@@ -105,7 +103,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
             vAlpha = body * uEnergy;
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (0.85 + vAlpha * uThickness) * (22.0 / -mvPosition.z);
+            gl_PointSize = (1.2 + vAlpha * uThickness) * (26.0 / -mvPosition.z); // Glow nativo
           }
         `}
         fragmentShader={`
@@ -115,7 +113,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
             float d = length(gl_PointCoord - vec2(0.5));
             float soft = 1.0 - smoothstep(0.0, 0.5, d);
             float core = 1.0 - smoothstep(0.0, 0.18, d);
-            gl_FragColor = vec4(uColor * (0.65 + core * 0.7), soft * vAlpha * 0.6);
+            gl_FragColor = vec4(uColor * (0.8 + core * 0.5), soft * vAlpha * 0.85); // Alpha potenciado
           }
         `}
       />
@@ -139,27 +137,31 @@ function BrainSculpture() {
   const currentColor = useRef(new THREE.Color("#555"));
 
   const { fusedGeometry, hotspots } = useMemo(() => {
-    // BLINDAJE 1: Verificación de escena
     if (!scene) return { fusedGeometry: null, hotspots: [] };
 
-    const geometriesToMerge: any[] = [];
+    // Método manual blindado (evita fallos de mergeGeometries)
+    const positionsArray: number[] = [];
     scene.traverse((child: any) => {
-      if (child.isMesh && child.geometry) {
-        const clonedGeo = child.geometry.clone();
+      if (child.isMesh && child.geometry && child.geometry.attributes.position) {
+        const posAttr = child.geometry.attributes.position;
         child.updateMatrixWorld();
-        clonedGeo.applyMatrix4(child.matrixWorld);
-        geometriesToMerge.push(clonedGeo);
+        const matrix = child.matrixWorld;
+        const v = new THREE.Vector3();
+        for (let i = 0; i < posAttr.count; i++) {
+          v.fromBufferAttribute(posAttr, i);
+          v.applyMatrix4(matrix);
+          positionsArray.push(v.x, v.y, v.z);
+        }
       }
     });
 
-    // BLINDAJE 2: Evita error 'length' de undefined
-    if (geometriesToMerge.length === 0) return { fusedGeometry: null, hotspots: [] };
+    if (positionsArray.length === 0) return { fusedGeometry: null, hotspots: [] };
 
-    let fusedGeo = mergeGeometries(geometriesToMerge);
-    if (!fusedGeo) return { fusedGeometry: null, hotspots: [] };
-
+    const fusedGeo = new THREE.BufferGeometry();
+    fusedGeo.setAttribute("position", new THREE.Float32BufferAttribute(positionsArray, 3));
     fusedGeo.computeBoundingSphere();
     fusedGeo.center();
+    
     const radius = fusedGeo.boundingSphere?.radius || 1;
     fusedGeo.scale(1 / radius, 1 / radius, 1 / radius);
 
@@ -187,6 +189,7 @@ function BrainSculpture() {
       }
       return { ...concept, pos: new THREE.Vector3().fromBufferAttribute(positions as THREE.BufferAttribute, closestIdx) };
     });
+    
     return { fusedGeometry: fusedGeo, hotspots: spots };
   }, [scene]);
 
@@ -213,7 +216,7 @@ function BrainSculpture() {
     const focusSpot = hotspots[focusIndex];
     if (!focusSpot) return;
 
-    const desiredIntensity = phase === "probing" ? 0.18 : phase === "selecting" ? 0.45 : phase === "transfer" ? 0.82 : 0.92;
+    const desiredIntensity = phase === "probing" ? 0.25 : phase === "selecting" ? 0.55 : phase === "transfer" ? 0.9 : 1.0;
     currentFocusPoint.current.lerp(focusSpot.pos, phase === "transfer" ? 0.06 : 0.035);
     currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity, 0.08);
     currentColor.current.lerp(new THREE.Color(focusSpot.color), 0.04);
@@ -232,7 +235,6 @@ function BrainSculpture() {
     transferHead.current.active *= 0.94;
   });
 
-  // BLINDAJE 3: No renderizar nada hasta que la geometría esté lista
   if (!fusedGeometry || !hotspots || hotspots.length === 0) return null;
 
   return (
@@ -245,7 +247,7 @@ function BrainSculpture() {
             uRayPos: { value: new THREE.Vector3() }, uRayActive: { value: 0 },
             uProbePos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
             uProbeWeight: { value: [0, 0, 0] }, uColorBase: { value: new THREE.Color("#1d1e22") },
-            uColorProbe: { value: new THREE.Color("#6e7481") }, uColorFocus: { value: new THREE.Color("#888") },
+            uColorProbe: { value: new THREE.Color("#6e7481") }, uColorFocus: { value: new THREE.Color("#aaaaaa") },
           }}
           vertexShader={`
             uniform float uTime; uniform vec3 uFocusPoint; uniform float uFocusIntensity; uniform vec3 uRayPos; uniform float uRayActive; uniform vec3 uProbePos[3]; uniform float uProbeWeight[3];
@@ -263,8 +265,10 @@ function BrainSculpture() {
               vProbe = clamp(probe, 0.0, 1.0); vRay = clamp(ray, 0.0, 1.0); vFocus = clamp(focus, 0.0, 1.0);
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
-              float size = 0.95 + vProbe * 1.5 + vRay * 4.0 + vFocus * 2.4;
-              gl_PointSize = size * (21.0 / -mvPosition.z);
+              
+              // Tamaño de puntos aumentado para compensar falta de Bloom
+              float size = 1.8 + vProbe * 3.0 + vRay * 6.0 + vFocus * 4.0;
+              gl_PointSize = size * (24.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
@@ -276,7 +280,10 @@ function BrainSculpture() {
               float soft = 1.0 - smoothstep(0.0, 0.5, d);
               float core = 1.0 - smoothstep(0.0, 0.16, d);
               vec3 color = mix(mix(uColorBase, uColorProbe, vProbe * 0.7), uColorFocus, max(vFocus, vRay));
-              gl_FragColor = vec4(color + core * (vRay * 0.45 + vFocus * 0.16), (0.06 + vProbe * 0.12 + vFocus * 0.22 + vRay * 0.56) * soft);
+              
+              // Alpha aumentado para brillo natural
+              float alpha = (0.12 + vProbe * 0.25 + vFocus * 0.35 + vRay * 0.8) * soft;
+              gl_FragColor = vec4(color + core * (vRay * 0.6 + vFocus * 0.25), alpha);
             }
           `}
         />
@@ -305,15 +312,11 @@ export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: 
     <div style={{ width: "100%", height: "100vh", background: "#060708", position: "relative" }}>
       <Canvas 
         camera={{ position: [0, 0, 8.5], fov: 28 }}
-        gl={{ antialias: true, stencil: false, alpha: false, depth: true }}
+        gl={{ antialias: true, alpha: false }} 
         dpr={[1, 2]}
       >
         <Suspense fallback={null}>
           <BrainSculpture />
-          <EffectComposer disableNormalPass> 
-            <Bloom luminanceThreshold={0.9} mipmapBlur intensity={0.45} radius={0.5} />
-            <Noise opacity={0.05} />
-          </EffectComposer>
         </Suspense>
         <OrbitControls enableDamping dampingFactor={0.05} minDistance={4} maxDistance={15} />
       </Canvas>
