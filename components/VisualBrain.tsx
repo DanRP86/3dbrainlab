@@ -139,20 +139,30 @@ function BrainSculpture() {
   const currentColor = useRef(new THREE.Color("#555"));
 
   const { fusedGeometry, hotspots } = useMemo(() => {
+    // BLINDAJE 1: Verificación de escena
+    if (!scene) return { fusedGeometry: null, hotspots: [] };
+
     const geometriesToMerge: any[] = [];
     scene.traverse((child: any) => {
-      if (child.isMesh) {
+      if (child.isMesh && child.geometry) {
         const clonedGeo = child.geometry.clone();
         child.updateMatrixWorld();
         clonedGeo.applyMatrix4(child.matrixWorld);
         geometriesToMerge.push(clonedGeo);
       }
     });
+
+    // BLINDAJE 2: Evita error 'length' de undefined
+    if (geometriesToMerge.length === 0) return { fusedGeometry: null, hotspots: [] };
+
     let fusedGeo = mergeGeometries(geometriesToMerge);
+    if (!fusedGeo) return { fusedGeometry: null, hotspots: [] };
+
     fusedGeo.computeBoundingSphere();
     fusedGeo.center();
-    const radius = fusedGeo.boundingSphere!.radius;
+    const radius = fusedGeo.boundingSphere?.radius || 1;
     fusedGeo.scale(1 / radius, 1 / radius, 1 / radius);
+
     const count = fusedGeo.attributes.position.count;
     const randoms = new Float32Array(count);
     const radialBias = new Float32Array(count);
@@ -164,6 +174,7 @@ function BrainSculpture() {
     }
     fusedGeo.setAttribute("aRandom", new THREE.BufferAttribute(randoms, 1));
     fusedGeo.setAttribute("aRadialBias", new THREE.BufferAttribute(radialBias, 1));
+
     const positions = fusedGeo.attributes.position;
     const spots = CONCEPTS.map((concept) => {
       let closestIdx = 0; let maxDot = -Infinity;
@@ -180,7 +191,7 @@ function BrainSculpture() {
   }, [scene]);
 
   useEffect(() => {
-    if (!hotspots.length) return;
+    if (!hotspots || hotspots.length === 0) return;
     let timers: any[] = [];
     const runCycle = () => {
       const from = currentIndexRef.current;
@@ -197,9 +208,11 @@ function BrainSculpture() {
   }, [hotspots]);
 
   useFrame((state) => {
-    if (!materialRef.current || !hotspots.length) return;
+    if (!materialRef.current || !hotspots || hotspots.length === 0) return;
     const focusIndex = phase === "settle" ? currentIndex : selectedIndex !== null ? selectedIndex : targetIndex;
     const focusSpot = hotspots[focusIndex];
+    if (!focusSpot) return;
+
     const desiredIntensity = phase === "probing" ? 0.18 : phase === "selecting" ? 0.45 : phase === "transfer" ? 0.82 : 0.92;
     currentFocusPoint.current.lerp(focusSpot.pos, phase === "transfer" ? 0.06 : 0.035);
     currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity, 0.08);
@@ -218,6 +231,9 @@ function BrainSculpture() {
     }
     transferHead.current.active *= 0.94;
   });
+
+  // BLINDAJE 3: No renderizar nada hasta que la geometría esté lista
+  if (!fusedGeometry || !hotspots || hotspots.length === 0) return null;
 
   return (
     <group scale={2.8}>
@@ -289,12 +305,12 @@ export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: 
     <div style={{ width: "100%", height: "100vh", background: "#060708", position: "relative" }}>
       <Canvas 
         camera={{ position: [0, 0, 8.5], fov: 28 }}
-        gl={{ antialias: true, stencil: false, alpha: false, depth: true }} // Puente técnico para React 19
+        gl={{ antialias: true, stencil: false, alpha: false, depth: true }}
         dpr={[1, 2]}
       >
         <Suspense fallback={null}>
           <BrainSculpture />
-          <EffectComposer disableNormalPass> {/* ESTO ARREGLA EL ERROR ReactCurrentBatchConfig */}
+          <EffectComposer disableNormalPass> 
             <Bloom luminanceThreshold={0.9} mipmapBlur intensity={0.45} radius={0.5} />
             <Noise opacity={0.05} />
           </EffectComposer>
