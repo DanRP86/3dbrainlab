@@ -1,0 +1,55 @@
+{
+  "personal_info": {
+    "name": "Daniel Rubio Paniagua",
+    "current_role": "Regional Real Estate & Facility Mgmt Portfolio Manager",
+    "company": "Philip Morris International",
+    "location": "Madrid, Spain",
+    "languages": ["Spanish (Native)", "English (Full Professional)", "Italian (Full Professional)"]
+  },
+  "professional_summary": "Asset portfolio and operations leader with over 15 years of experience. Expert in managing multi-market portfolios across Corporate Real Estate, Facilities, and Mobility. Specialized in strategic governance, hands-on operational execution, capex/opex discipline, and large-scale transformation initiatives.",
+  "experience": [
+    {
+      "period": "Current (Since 2021)",
+      "role": "Regional Real Estate & Facility Mgmt Portfolio Manager",
+      "company": "Philip Morris International",
+      "details": "Managing asset portfolio governance and operational execution for over 20 markets and approximately 150 buildings. Focus on asset disposals, land transactions, space optimization, and leading the AI Champions community to drive digital transformation."
+    },
+    {
+      "period": "Previous at PMI",
+      "role": "Regional Fleet Portfolio Programs",
+      "company": "Philip Morris International",
+      "details": "Managed regional fleet portfolios across multiple geographies, overseeing more than 20,000 vehicles. Achieved a conversion of over 30% of the international fleet to sustainable powertrains and implemented optimization tools across Italy, Portugal, and Spain."
+    },
+    {
+      "period": "2016 - 2021",
+      "role": "International Fleet Inventory & Remarketing Manager / Regional Fleet Manager",
+      "company": "Avis Budget Group",
+      "details": "Led regional fleet procurement and operations for the Mediterranean region. Optimized inventory, managed buy-back and at-risk supply chains, and coordinated OEM negotiations. Responsible for fleet forecasting accuracy and residual value analysis."
+    },
+    {
+      "period": "2011 - 2016",
+      "role": "Fleet & Operations / Procurement / Finance Analyst",
+      "company": "Northgate plc / Avis",
+      "details": "Managed fleet supply chains, logistics cost reduction, and financial planning. Developed predictive models for asset disposals and controlled delivery efficiency for large-scale vehicle orders."
+    },
+    {
+      "period": "2008 - 2009",
+      "role": "Technical Assistance to Construction Site Management",
+      "company": "Gesti\u00f3n Integral del Suelo, S.L.",
+      "details": "Controlled monthly budgets, quality supervision, and material management for infrastructure projects related to water supply and wastewater networks."
+    }
+  ],
+  "education": [
+    {
+      "degree": "Master of Science: Industrial Engineer, Industrial Organization",
+      "institution": "Universidad Polit\u00e9cnica de Madrid",
+      "years": "2009 - 2011"
+    },
+    {
+      "degree": "Bachelor of Science: Mechanical Engineer",
+      "institution": "Universidad Polit\u00e9cnica de Madrid",
+      "years": "2004 - 2009"
+    }
+  ],
+  "technical_skills": ["Capex/Opex Governance", "Asset Lifecycle Management", "Data Analytics (Python, Excel, PowerBI)", "Vendor Negotiation", "AI & Multi-agent Systems", "Strategic Location Studies"]
+}
