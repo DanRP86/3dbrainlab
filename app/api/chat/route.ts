@@ -18,7 +18,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Función para leer archivos de data/
 async function readDataFile(fileName: string) {
   try {
-    const filePath = path.join(process.cwd(), 'src/data', fileName);
+    const filePath = path.join(process.cwd(), 'data', fileName);
     return await fs.readFile(filePath, 'utf8');
   } catch (error) {
     return "Información no disponible.";
