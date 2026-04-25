@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import Chat from '@/components/Chat';
+import Chat from '@/components/chat';
 
 // Cargamos el cerebro de forma dinámica para que NO se ejecute en el servidor
 const VisualBrain = dynamic(() => import('@/components/VisualBrain'), { 
