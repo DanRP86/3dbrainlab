@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import VisualBrain from '@/components/3d/VisualBrain';
-import Chat from '@/components/ui/Chat';
+import VisualBrain from '../components/3d/VisualBrain';
+import Chat from '../components/ui/Chat';
 
 export default function Home() {
   const [activeNodes, setActiveNodes] = useState<number[]>([0, 0]);
