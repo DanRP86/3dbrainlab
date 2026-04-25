@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import VisualBrain from '@/components/VisualBrain';
-import Chat from '@/components/ui/Chat';
+import Chat from '@/components/ui/chat';
 
 export default function Home() {
   const [activeNodes, setActiveNodes] = useState<number[]>([0, 0]);
