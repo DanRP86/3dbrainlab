@@ -1,59 +1,67 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import nodemailer from 'nodemailer';
 import fs from 'fs/promises';
 import path from 'path';
+import nodemailer from 'nodemailer';
 
-// --- CONFIGURACIÓN DE NODEMAILER (El sustituto de smtplib) ---
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.GMAIL_ADDRESS,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
+// Inicializamos OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Función para leer archivos de data/
-async function readDataFile(fileName: string) {
-  try {
-    const filePath = path.join(process.cwd(), 'data', fileName);
-    return await fs.readFile(filePath, 'utf8');
-  } catch (error) {
-    return "Información no disponible.";
+// 1. Definimos las herramientas (Tus herramientas originales adaptadas a Node.js)
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "get_detailed_cv",
+      description: "Call this tool to get Daniel's full detailed CV (JSON format). Use it ONLY when the user asks specific career questions."
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_faqs",
+      description: "Call this tool if the user asks about specific technologies (like n8n, Microsoft, AI agents), personal projects, or any 'What are you doing/studying' type of questions."
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_contact_email",
+      description: "Call this tool ONLY when the user explicitly wants to leave a message, contact Daniel, or hire him, AND you have already collected their Name, Surname, Email, and Message.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "The user's first name." },
+          surname: { type: "string", description: "The user's last name." },
+          user_email: { type: "string", description: "The user's email address." },
+          message_to_daniel: { type: "string", description: "The message the user wants to send to Daniel." }
+        },
+        required: ["name", "surname", "user_email", "message_to_daniel"],
+        additionalProperties: false
+      }
+    }
   }
-}
+];
 
 export async function POST(req: Request) {
   try {
-    const { message, history } = await req.json();
-    const summary = await readDataFile('summary.txt');
+    const { messages } = await req.json();
 
-    // Esquema de respuesta estructurada para el Cerebro 3D
-    const responseFormat = {
-      type: "json_schema" as const,
-      json_schema: {
-        name: "brain_response",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            reply: { type: "string" },
-            active_nodes: { 
-              type: "array", 
-              items: { type: "integer" },
-              minItems: 2,
-              maxItems: 2
-            }
-          },
-          required: ["reply", "active_nodes"],
-          additionalProperties: false
-        }
-      }
-    };
+    // 2. Leemos el archivo summary.txt para darle el contexto base
+    const summaryPath = path.join(process.cwd(), 'data', 'summary.txt');
+    let summaryContent = "";
+    try {
+      summaryContent = await fs.readFile(summaryPath, 'utf-8');
+    } catch (e) {
+      console.error("No se pudo leer summary.txt. Verifica que la ruta 'data/summary.txt' existe.");
+    }
 
-    const systemPrompt = `
+   // 3. Creamos el mensaje de sistema inyectando tus Guardrails y el Summary
+    const systemMessage: OpenAI.Chat.ChatCompletionMessageParam = {
+      role: 'system',
+      content: `
       # SYSTEM IDENTITY & BEHAVIOR RULES
       You are the interactive professional Digital Twin of Daniel Rubio Paniagua. You must act, think, and respond exactly as Daniel would.
 
@@ -85,27 +93,87 @@ export async function POST(req: Request) {
       6: SPORTS (Windsurfing, Climbing)
       7: VAN (Woodworking, Camper van projects)
 
-      # BASE CONTEXT: ${summary}
-    `;
+      # BASE CONTEXT: 
+      ${summaryContent}
+      `
+    };
 
+    // Unimos el sistema con el historial de mensajes del usuario
+    const currentMessages = [systemMessage, ...messages];
+
+    // 4. Primera llamada a OpenAI
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: message }
-      ],
-      response_format: responseFormat
+      model: 'gpt-4o-mini',
+      messages: currentMessages,
+      tools: tools,
+      tool_choice: 'auto',
     });
 
-    const content = JSON.parse(response.choices[0].message.content || '{}');
+    let responseMessage = response.choices[0].message;
 
-    // Lógica de envío de email si detecta intención de contacto (simplificado para el ejemplo)
-    // En una fase posterior podemos re-integrar el "Tool Calling" exacto
-    
-    return NextResponse.json(content);
+    // 5. Bucle de ejecución de herramientas (Tool Calling)
+    if (responseMessage.tool_calls) {
+      currentMessages.push(responseMessage); // Guardamos la intención de usar herramientas
+
+      for (const toolCall of responseMessage.tool_calls) {
+        const functionName = toolCall.function.name;
+        let functionResponse = "";
+
+        if (functionName === 'get_detailed_cv') {
+          const cvPath = path.join(process.cwd(), 'data', 'professional_data.json'); // Asegúrate de que se llama así
+          functionResponse = await fs.readFile(cvPath, 'utf-8');
+        } 
+        else if (functionName === 'get_faqs') {
+          const faqsPath = path.join(process.cwd(), 'data', 'faqs.json'); // Asegúrate de que se llama así
+          functionResponse = await fs.readFile(faqsPath, 'utf-8');
+        } 
+        else if (functionName === 'send_contact_email') {
+          const args = JSON.parse(toolCall.function.arguments);
+          
+          // Configuración de Nodemailer
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: process.env.GMAIL_ADDRESS,
+              pass: process.env.GMAIL_APP_PASSWORD,
+            },
+          });
+
+          await transporter.sendMail({
+            from: process.env.GMAIL_ADDRESS,
+            to: process.env.GMAIL_ADDRESS, // Te lo envías a ti mismo
+            subject: `Nuevo mensaje del Digital Twin de: ${args.name} ${args.surname}`,
+            text: `Email: ${args.user_email}\n\nMensaje:\n${args.message_to_daniel}`,
+          });
+
+          functionResponse = "Email successfully sent to Daniel. Tell the user you have forwarded their message.";
+        }
+
+        // Añadimos el resultado del archivo/email al historial
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: functionResponse,
+        });
+      }
+
+      // 6. Segunda llamada a OpenAI con los datos de las herramientas inyectados
+      const secondResponse = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: currentMessages,
+      });
+
+      responseMessage = secondResponse.choices[0].message;
+    }
+
+    // 7. Devolvemos la respuesta final (AÚN SIN FORMATO DE CEREBRO 3D)
+    return NextResponse.json({ 
+      role: 'assistant', 
+      content: responseMessage.content 
+    });
 
   } catch (error: any) {
+    console.error('Error en la API de Chat:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
