@@ -11,8 +11,8 @@ const VisualBrain = dynamic(() => import('@/components/VisualBrain'), {
 });
 
 export default function Home() {
-  const [activeNodes, setActiveNodes] = useState<number[]>([0, 1]);
-  const [isThinking, setIsThinking] = useState(true);
+  const [activeNodes, setActiveNodes] = useState<number[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
 
   const handleNewResponse = (nodes: number[]) => {
     setActiveNodes(nodes);
