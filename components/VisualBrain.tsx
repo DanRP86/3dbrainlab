@@ -63,28 +63,34 @@ function getProbeCandidates(targetIndex: number, fromIndex: number) {
   return [targetIndex, ...alternatives];
 }
 
-function AmbientNoiseField({ thinking }: { thinking: boolean }) {
+function AmbientNoiseField({
+  thinking,
+  life = 1,
+}: {
+  thinking: boolean;
+  life?: number;
+}) {
   const pointsRef = useRef<THREE.Points>(null);
 
   const geometry = useMemo(() => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const count = isMobile ? 900 : 1800;
+    const count = isMobile ? 1800 : 3200;
 
     const positions = new Float32Array(count * 3);
     const randoms = new Float32Array(count);
     const scales = new Float32Array(count);
 
     for (let i = 0; i < count; i++) {
-      const r = 3.2 + Math.random() * 2.8;
+      const r = 3.0 + Math.random() * 3.8;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
 
-      positions[i * 3 + 0] = Math.sin(phi) * Math.cos(theta) * r * 1.05;
-      positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r * 0.72;
-      positions[i * 3 + 2] = Math.cos(phi) * r * 1.4 - 2.2;
+      positions[i * 3 + 0] = Math.sin(phi) * Math.cos(theta) * r * 1.2;
+      positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * r * 0.8;
+      positions[i * 3 + 2] = Math.cos(phi) * r * 1.55 - 2.5;
 
       randoms[i] = Math.random();
-      scales[i] = 0.5 + Math.random() * 1.2;
+      scales[i] = 0.7 + Math.random() * 1.8;
     }
 
     const geo = new THREE.BufferGeometry();
@@ -103,6 +109,7 @@ function AmbientNoiseField({ thinking }: { thinking: boolean }) {
       thinking ? 1 : 0,
       0.05
     );
+    mat.uniforms.uLife.value = life;
   });
 
   return (
@@ -115,12 +122,14 @@ function AmbientNoiseField({ thinking }: { thinking: boolean }) {
         uniforms={{
           uTime: { value: 0 },
           uThinking: { value: 0 },
-          uColorA: { value: new THREE.Color("#10161f") },
-          uColorB: { value: new THREE.Color("#31465a") },
+          uLife: { value: 1 },
+          uColorA: { value: new THREE.Color("#0f1722") },
+          uColorB: { value: new THREE.Color("#38556f") },
         }}
         vertexShader={`
           uniform float uTime;
           uniform float uThinking;
+          uniform float uLife;
           attribute float aRandom;
           attribute float aScale;
           varying float vAlpha;
@@ -129,17 +138,22 @@ function AmbientNoiseField({ thinking }: { thinking: boolean }) {
           void main() {
             vec3 pos = position;
 
-            pos.x += sin(uTime * 0.10 + aRandom * 10.0) * 0.06;
-            pos.y += cos(uTime * 0.12 + aRandom * 14.0) * 0.05;
-            pos.z += sin(uTime * 0.08 + aRandom * 8.0) * 0.06;
+            float driftX = sin(uTime * 0.10 + aRandom * 10.0) * 0.12;
+            float driftY = cos(uTime * 0.12 + aRandom * 14.0) * 0.10;
+            float driftZ = sin(uTime * 0.08 + aRandom * 8.0) * 0.12;
 
-            float pulse = 0.5 + 0.5 * sin(uTime * 0.7 + aRandom * 15.0);
+            float fine = sin(uTime * 0.45 + aRandom * 22.0) * 0.03;
+            pos.x += driftX + fine;
+            pos.y += driftY + fine * 0.7;
+            pos.z += driftZ;
+
+            float pulse = 0.5 + 0.5 * sin(uTime * 0.8 + aRandom * 18.0);
             vMix = pulse;
-            vAlpha = (0.07 + pulse * 0.06 + uThinking * 0.05) * (0.65 + aRandom * 0.35);
+            vAlpha = (0.12 + pulse * 0.10 + uThinking * 0.07) * (0.65 + aRandom * 0.35) * uLife;
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (1.4 + aScale * 1.6 + uThinking * 0.6) * (15.0 / -mvPosition.z);
+            gl_PointSize = (2.2 + aScale * 2.4 + uThinking * 0.9) * (18.0 / -mvPosition.z);
           }
         `}
         fragmentShader={`
@@ -153,9 +167,12 @@ function AmbientNoiseField({ thinking }: { thinking: boolean }) {
             if (d > 0.5) discard;
 
             float soft = 1.0 - smoothstep(0.0, 0.5, d);
-            vec3 color = mix(uColorA, uColorB, vMix);
+            float core = 1.0 - smoothstep(0.0, 0.16, d);
 
-            gl_FragColor = vec4(color, vAlpha * soft * 0.45);
+            vec3 color = mix(uColorA, uColorB, vMix);
+            color += core * 0.05;
+
+            gl_FragColor = vec4(color, vAlpha * soft * 0.72);
           }
         `}
       />
@@ -343,6 +360,7 @@ function BrainSculpture({
   const currentIndexRef = useRef(0);
   const transitionTimersRef = useRef<number[]>([]);
   const lastSignatureRef = useRef("");
+  const lastNodeUpdateRef = useRef(Date.now());
 
   const probeHeads = useRef([
     { pos: new THREE.Vector3(), active: 0 },
@@ -353,7 +371,7 @@ function BrainSculpture({
   const transferHead = useRef({ pos: new THREE.Vector3(), active: 0 });
 
   const currentFocusPoint = useRef(new THREE.Vector3());
-  const currentIntensity = useRef(0.55);
+  const currentIntensity = useRef(0.62);
   const currentColor = useRef(new THREE.Color(CONCEPTS[0].color));
 
   const data = useMemo(() => {
@@ -483,6 +501,7 @@ function BrainSculpture({
     if (signature === lastSignatureRef.current) return;
 
     lastSignatureRef.current = signature;
+    lastNodeUpdateRef.current = Date.now();
     clearTimers();
 
     let from = currentIndexRef.current;
@@ -495,42 +514,51 @@ function BrainSculpture({
   useFrame((state) => {
     if (!data?.hotspots?.length || !mainMaterialRef.current) return;
 
-    const focusIndex =
+    const t = state.clock.getElapsedTime();
+    const idle = Date.now() - lastNodeUpdateRef.current > 2500;
+
+    let focusIndex =
       phase === "settle" || phase === "idle"
         ? currentIndex
         : selectedIndex !== null
         ? selectedIndex
         : targetIndex;
 
+    if (idle && !isThinking) {
+      focusIndex = Math.floor((t * 0.16) % data.hotspots.length);
+    }
+
     const focusSpot = data.hotspots[focusIndex] || data.hotspots[0];
 
     const desiredIntensity =
       phase === "probing"
         ? isThinking
-          ? 0.45
-          : 0.28
+          ? 0.5
+          : 0.34
         : phase === "selecting"
         ? isThinking
-          ? 0.8
-          : 0.6
+          ? 0.86
+          : 0.66
         : phase === "transfer"
         ? isThinking
-          ? 1.12
-          : 0.92
+          ? 1.16
+          : 0.96
+        : idle && !isThinking
+        ? 0.5 + Math.sin(t * 0.9) * 0.06
         : isThinking
-        ? 0.72
-        : 0.56;
+        ? 0.8
+        : 0.62;
 
-    currentFocusPoint.current.lerp(focusSpot.pos, phase === "transfer" ? 0.08 : 0.05);
+    currentFocusPoint.current.lerp(focusSpot.pos, idle ? 0.014 : phase === "transfer" ? 0.08 : 0.05);
     currentIntensity.current = THREE.MathUtils.lerp(
       currentIntensity.current,
       desiredIntensity,
-      0.1
+      0.08
     );
-    currentColor.current.lerp(new THREE.Color(focusSpot.color), 0.06);
+    currentColor.current.lerp(new THREE.Color(focusSpot.color), idle ? 0.025 : 0.06);
 
     const u = mainMaterialRef.current.uniforms;
-    u.uTime.value = state.clock.getElapsedTime();
+    u.uTime.value = t;
     u.uFocusPoint.value.copy(currentFocusPoint.current);
     u.uFocusIntensity.value = currentIntensity.current;
     u.uColorFocus.value.copy(currentColor.current);
@@ -539,6 +567,12 @@ function BrainSculpture({
       u.uRayActive.value,
       transferHead.current.active,
       0.18
+    );
+    u.uBreath.value = 0.5 + 0.5 * Math.sin(t * 0.9);
+    u.uThinkingBoost.value = THREE.MathUtils.lerp(
+      u.uThinkingBoost.value,
+      isThinking ? 1 : 0,
+      0.06
     );
 
     const probePos = u.uProbePos.value as THREE.Vector3[];
@@ -557,13 +591,20 @@ function BrainSculpture({
     transferHead.current.active *= 0.95;
 
     if (shellMaterialRef.current) {
-      shellMaterialRef.current.uniforms.uTime.value = state.clock.getElapsedTime();
-      shellMaterialRef.current.uniforms.uPulse.value = THREE.MathUtils.lerp(
-        shellMaterialRef.current.uniforms.uPulse.value,
-        isThinking ? 1 : 0.6,
+      const s = shellMaterialRef.current.uniforms;
+      s.uTime.value = t;
+      s.uPulse.value = THREE.MathUtils.lerp(
+        s.uPulse.value,
+        isThinking ? 1 : 0.72,
         0.08
       );
-      shellMaterialRef.current.uniforms.uColor.value.copy(currentColor.current);
+      s.uBreath.value = 0.5 + 0.5 * Math.sin(t * 0.9);
+      s.uThinkingBoost.value = THREE.MathUtils.lerp(
+        s.uThinkingBoost.value,
+        isThinking ? 1 : 0,
+        0.06
+      );
+      s.uColor.value.copy(currentColor.current);
     }
   });
 
@@ -574,7 +615,7 @@ function BrainSculpture({
   const destinationSpot = hotspots[targetIndex];
 
   return (
-    <group scale={2.85}>
+    <group scale={2.9}>
       <points geometry={fusedGeometry} renderOrder={1}>
         <shaderMaterial
           ref={shellMaterialRef}
@@ -583,21 +624,32 @@ function BrainSculpture({
           blending={THREE.AdditiveBlending}
           uniforms={{
             uTime: { value: 0 },
-            uPulse: { value: 0.6 },
+            uPulse: { value: 0.72 },
+            uBreath: { value: 0.5 },
+            uThinkingBoost: { value: 0 },
             uColor: { value: new THREE.Color(CONCEPTS[0].color) },
           }}
           vertexShader={`
             uniform float uTime;
             uniform float uPulse;
+            uniform float uBreath;
+            uniform float uThinkingBoost;
+            uniform vec3 uColor;
             attribute float aRandom;
 
             void main() {
               vec3 pos = position;
-              pos += normalize(position) * sin(uTime * 0.9 + aRandom * 10.0) * 0.0055 * (0.9 + uPulse * 0.8);
+
+              float shellBreath = (0.005 + uThinkingBoost * 0.0025) * (0.7 + uBreath * 0.9);
+              float shellNoise =
+                sin(uTime * 0.9 + aRandom * 10.0) * 0.003 +
+                cos(uTime * 0.7 + aRandom * 14.0) * 0.002;
+
+              pos += normalize(position) * (shellBreath + shellNoise);
 
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = (1.0 + aRandom * 0.9 + uPulse * 1.5) * (18.0 / -mvPosition.z);
+              gl_PointSize = (1.6 + aRandom * 1.2 + uPulse * 2.0) * (20.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
@@ -606,7 +658,9 @@ function BrainSculpture({
               float d = length(gl_PointCoord - vec2(0.5));
               if (d > 0.5) discard;
               float soft = 1.0 - smoothstep(0.0, 0.5, d);
-              gl_FragColor = vec4(uColor, soft * 0.08);
+              float core = 1.0 - smoothstep(0.0, 0.18, d);
+              vec3 color = uColor + core * 0.05;
+              gl_FragColor = vec4(color, soft * 0.12);
             }
           `}
         />
@@ -620,8 +674,10 @@ function BrainSculpture({
           blending={THREE.AdditiveBlending}
           uniforms={{
             uTime: { value: 0 },
+            uBreath: { value: 0.5 },
+            uThinkingBoost: { value: 0 },
             uFocusPoint: { value: new THREE.Vector3() },
-            uFocusIntensity: { value: 0.56 },
+            uFocusIntensity: { value: 0.62 },
             uRayPos: { value: new THREE.Vector3() },
             uRayActive: { value: 0 },
             uProbePos: {
@@ -634,6 +690,8 @@ function BrainSculpture({
           }}
           vertexShader={`
             uniform float uTime;
+            uniform float uBreath;
+            uniform float uThinkingBoost;
             uniform vec3 uFocusPoint;
             uniform float uFocusIntensity;
             uniform vec3 uRayPos;
@@ -652,13 +710,22 @@ function BrainSculpture({
               vec3 pos = position;
               float edge = smoothstep(0.35, 1.0, aRadialBias);
 
+              float slowWave =
+                sin(uTime * 0.9 + pos.x * 6.0 + aRandom * 6.2831) * 0.0032 +
+                cos(uTime * 0.7 + pos.y * 7.0 + aRandom * 5.2831) * 0.0030;
+
+              float fineJitter =
+                sin(uTime * 1.8 + pos.z * 11.0 + aRandom * 9.2831) * 0.0015;
+
+              float breathPush = (0.0038 + uThinkingBoost * 0.0022) * (0.6 + uBreath * 0.8);
+
+              pos += normalize(position) * (slowWave + fineJitter + breathPush * edge);
+
               pos += vec3(
                 sin(uTime * 0.95 + pos.y * 8.0 + aRandom * 6.2831),
                 cos(uTime * 0.82 + pos.z * 7.0 + aRandom * 7.2831),
                 sin(uTime * 1.05 + pos.x * 9.0 + aRandom * 8.2831)
-              ) * 0.0042 * mix(0.4, 1.0, edge);
-
-              pos += normalize(position) * sin(uTime * 0.55 + aRandom * 10.0) * 0.0024;
+              ) * 0.0022 * mix(0.35, 1.0, edge);
 
               float probe = 0.0;
               for (int i = 0; i < 3; i++) {
@@ -675,8 +742,8 @@ function BrainSculpture({
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
 
-              float size = 1.35 + vProbe * 2.0 + vRay * 7.5 + vFocus * 6.5;
-              gl_PointSize = size * (24.0 / -mvPosition.z);
+              float size = 1.8 + vProbe * 2.2 + vRay * 7.8 + vFocus * 7.0 + uBreath * 0.8;
+              gl_PointSize = size * (25.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
@@ -699,8 +766,8 @@ function BrainSculpture({
               color = mix(color, uColorProbe, vProbe * 0.82);
               color = mix(color, uColorFocus, max(vFocus, vRay));
 
-              float alpha = (0.11 + vProbe * 0.18 + vFocus * 0.7 + vRay * 0.98) * soft;
-              color += core * (vRay * 0.7 + vFocus * 0.3);
+              float alpha = (0.18 + vProbe * 0.18 + vFocus * 0.72 + vRay * 0.98) * soft;
+              color += core * (vRay * 0.7 + vFocus * 0.35);
 
               gl_FragColor = vec4(color, alpha);
             }
@@ -766,7 +833,7 @@ function BrainSculpture({
                   fontFamily: '"Cormorant Garamond", Georgia, serif',
                   fontStyle: "italic",
                   whiteSpace: "nowrap",
-                  opacity: isCurrent ? 0.88 : isSelected ? 0.32 : 0.02,
+                  opacity: isCurrent ? 0.88 : isSelected ? 0.34 : 0.03,
                   transform: isCurrent
                     ? "translate(14px, -50%)"
                     : isSelected
@@ -796,7 +863,7 @@ export default function VisualBrain({
       style={{
         width: "100%",
         height: "100vh",
-        background: "#060708",
+        background: "#050608",
         position: "relative",
         overflow: "hidden",
       }}
@@ -808,8 +875,8 @@ export default function VisualBrain({
           zIndex: 0,
           pointerEvents: "none",
           background:
-            "radial-gradient(circle at 50% 50%, rgba(47,64,88,0.34), rgba(7,9,12,0.96) 66%)",
-          filter: "blur(38px)",
+            "radial-gradient(circle at 48% 48%, rgba(68,94,128,0.28), rgba(7,9,12,0.96) 64%)",
+          filter: "blur(42px)",
           transform: "scale(1.08)",
         }}
       />
@@ -820,7 +887,7 @@ export default function VisualBrain({
           zIndex: 2,
           pointerEvents: "none",
           background:
-            "radial-gradient(circle at center, transparent 34%, rgba(0,0,0,0.42) 72%, rgba(0,0,0,0.76) 100%)",
+            "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.40) 68%, rgba(0,0,0,0.78) 100%)",
         }}
       />
       <div
@@ -830,8 +897,8 @@ export default function VisualBrain({
           zIndex: 3,
           pointerEvents: "none",
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-          opacity: 0.022,
-          mixBlendMode: "overlay",
+          opacity: 0.05,
+          mixBlendMode: "soft-light",
         }}
       />
 
@@ -843,7 +910,7 @@ export default function VisualBrain({
         style={{ position: "relative", zIndex: 1 }}
       >
         <Suspense fallback={null}>
-          <AmbientNoiseField thinking={isThinking} />
+          <AmbientNoiseField thinking={isThinking} life={1} />
           <BrainSculpture activeNodes={activeNodes} isThinking={isThinking} />
         </Suspense>
 
