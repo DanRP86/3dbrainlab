@@ -336,21 +336,34 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
 }
 
 export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: number[], isThinking: boolean }) {
+  // Estado para controlar cuándo es seguro encender los efectos visuales
+  const [isReady, setIsReady] = useState(false);
+
+  // Le damos un pequeño margen al navegador para montar el Canvas antes de inyectar el Bloom
+  useEffect(() => {
+    const timer = setTimeout(() => setIsReady(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div style={{ width: "100%", height: "100vh", background: "#060708", position: "relative" }}>
       <Canvas 
         camera={{ position: [0, 0, 8.5], fov: 28 }}
-        gl={{ antialias: false, alpha: false }} // Optimizado
-        dpr={[1, 2]}
+        gl={{ antialias: false, alpha: false, preserveDrawingBuffer: true }} // preserveDrawingBuffer ayuda a la estabilidad de WebGL
+        dpr={[1, 1.5]} // Limitamos un poco el DPR máximo para evitar colapsos en gráficas saturadas
       >
         <Suspense fallback={null}>
           <BrainSculpture activeNodes={activeNodes} isThinking={isThinking} />
-          {/* Vuelve la magia del post-procesado de forma segura */}
-          <EffectComposer disableNormalPass> 
-            <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.4} />
-            <Noise opacity={0.06} />
-          </EffectComposer>
+          
+          {/* El Composer SOLO se monta cuando el cerebro ya está respirando */}
+          {isReady && (
+            <EffectComposer disableNormalPass multisampling={0}> 
+              <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.4} />
+              <Noise opacity={0.06} />
+            </EffectComposer>
+          )}
         </Suspense>
+        
         <OrbitControls enableDamping dampingFactor={0.05} minDistance={4} maxDistance={15} />
       </Canvas>
     </div>
