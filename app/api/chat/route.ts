@@ -165,7 +165,28 @@ export async function POST(req: Request) {
       });
       responseMessage = secondResponse.choices[0].message;
     }
-
+    
+    const rawContent = responseMessage.content || "";
+    
+    const nodeMatch = rawContent.match(/Nodes:\s*\[([^\]]+)\]/i);
+    
+    let nodes: number[] = [];
+    if (nodeMatch) {
+      nodes = nodeMatch[1]
+        .split(",")
+        .map((n) => parseInt(n.trim(), 10))
+        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 7);
+    }
+    
+    const cleanContent = rawContent
+      .replace(/\n?\s*Nodes:\s*\[[^\]]+\]\s*$/i, "")
+      .trim();
+    
+    return NextResponse.json({
+      content: cleanContent,
+      nodes,
+    });
+    
     return NextResponse.json({ 
       content: responseMessage.content 
     });
