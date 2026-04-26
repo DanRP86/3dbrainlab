@@ -4,12 +4,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import nodemailer from 'nodemailer';
 
-// Inicializamos OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 1. Definimos las herramientas (Tus herramientas originales adaptadas a Node.js)
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
@@ -33,10 +31,10 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string", description: "The user's first name." },
-          surname: { type: "string", description: "The user's last name." },
-          user_email: { type: "string", description: "The user's email address." },
-          message_to_daniel: { type: "string", description: "The message the user wants to send to Daniel." }
+          name: { type: "string" },
+          surname: { type: "string" },
+          user_email: { type: "string" },
+          message_to_daniel: { type: "string" }
         },
         required: ["name", "surname", "user_email", "message_to_daniel"],
         additionalProperties: false
@@ -47,18 +45,19 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    // BLINDAJE: Verificamos que el body tenga la estructura correcta
+    const body = await req.json();
+    const userMessages = Array.isArray(body.messages) ? body.messages : [];
 
-    // 2. Leemos el archivo summary.txt para darle el contexto base
+    // Lectura de contexto
     const summaryPath = path.join(process.cwd(), 'data', 'summary.txt');
-    let summaryContent = "";
+    let summaryContent = "Context unavailable.";
     try {
       summaryContent = await fs.readFile(summaryPath, 'utf-8');
     } catch (e) {
-      console.error("No se pudo leer summary.txt. Verifica que la ruta 'data/summary.txt' existe.");
+      console.warn("Summary not found at /data/summary.txt");
     }
 
-   // 3. Creamos el mensaje de sistema inyectando tus Guardrails y el Summary
     const systemMessage: OpenAI.Chat.ChatCompletionMessageParam = {
       role: 'system',
       content: `
@@ -98,82 +97,67 @@ export async function POST(req: Request) {
       `
     };
 
-    // Unimos el sistema con el historial de mensajes del usuario
-    const currentMessages = [systemMessage, ...messages];
+    const apiMessages = [systemMessage, ...userMessages];
 
-    // 4. Primera llamada a OpenAI
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: currentMessages,
+      messages: apiMessages,
       tools: tools,
       tool_choice: 'auto',
     });
 
     let responseMessage = response.choices[0].message;
 
-    // 5. Bucle de ejecución de herramientas (Tool Calling)
+    // Lógica de Tool Calling
     if (responseMessage.tool_calls) {
-      currentMessages.push(responseMessage); // Guardamos la intención de usar herramientas
+      apiMessages.push(responseMessage);
 
       for (const toolCall of responseMessage.tool_calls) {
-        const functionName = toolCall.function.name;
-        let functionResponse = "";
-
-        if (functionName === 'get_detailed_cv') {
-          const cvPath = path.join(process.cwd(), 'data', 'professional_data.json'); // Asegúrate de que se llama así
-          functionResponse = await fs.readFile(cvPath, 'utf-8');
-        } 
-        else if (functionName === 'get_faqs') {
-          const faqsPath = path.join(process.cwd(), 'data', 'faq_knowledge.json'); // Asegúrate de que se llama así
-          functionResponse = await fs.readFile(faqsPath, 'utf-8');
-        } 
-        else if (functionName === 'send_contact_email') {
-          const args = JSON.parse(toolCall.function.arguments);
-          
-          // Configuración de Nodemailer
-          const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-              user: process.env.GMAIL_ADDRESS,
-              pass: process.env.GMAIL_APP_PASSWORD,
-            },
-          });
-
-          await transporter.sendMail({
-            from: process.env.GMAIL_ADDRESS,
-            to: process.env.GMAIL_ADDRESS, // Te lo envías a ti mismo
-            subject: `Nuevo mensaje del Digital Twin de: ${args.name} ${args.surname}`,
-            text: `Email: ${args.user_email}\n\nMensaje:\n${args.message_to_daniel}`,
-          });
-
-          functionResponse = "Email successfully sent to Daniel. Tell the user you have forwarded their message.";
+        let content = "";
+        try {
+          if (toolCall.function.name === 'get_detailed_cv') {
+            content = await fs.readFile(path.join(process.cwd(), 'data', 'professional_data.json'), 'utf-8');
+          } else if (toolCall.function.name === 'get_faqs') {
+            content = await fs.readFile(path.join(process.cwd(), 'data', 'faqs.json'), 'utf-8');
+          } else if (toolCall.function.name === 'send_contact_email') {
+            const args = JSON.parse(toolCall.function.arguments);
+            const transporter = nodemailer.createTransport({
+              service: 'gmail',
+              auth: { user: process.env.GMAIL_ADDRESS, pass: process.env.GMAIL_APP_PASSWORD }
+            });
+            await transporter.sendMail({
+              from: process.env.GMAIL_ADDRESS,
+              to: process.env.GMAIL_ADDRESS,
+              subject: `Digital Twin Contact: ${args.name}`,
+              text: `From: ${args.user_email}\n\n${args.message_to_daniel}`
+            });
+            content = "Email sent successfully.";
+          }
+        } catch (err) {
+          content = "Error accessing data.";
         }
 
-        // Añadimos el resultado del archivo/email al historial
-        currentMessages.push({
+        apiMessages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
-          content: functionResponse,
+          content: content
         });
       }
 
-      // 6. Segunda llamada a OpenAI con los datos de las herramientas inyectados
       const secondResponse = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: currentMessages,
+        messages: apiMessages,
       });
-
       responseMessage = secondResponse.choices[0].message;
     }
 
-    // 7. Devolvemos la respuesta final (AÚN SIN FORMATO DE CEREBRO 3D)
     return NextResponse.json({ 
       role: 'assistant', 
       content: responseMessage.content 
     });
 
   } catch (error: any) {
-    console.error('Error en la API de Chat:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Error en API:', error);
+    return NextResponse.json({ error: "Check server logs" }, { status: 500 });
   }
 }
