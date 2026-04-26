@@ -3,11 +3,13 @@
 import React, { useRef, useMemo, Suspense, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Html, OrbitControls } from "@react-three/drei";
+import { EffectComposer, Bloom, Noise } from "@react-three/postprocessing";
 import * as THREE from "three";
 
+// 1. INGLÉS Y CONCEPTOS
 const CONCEPTS = [
   { id: 0, label: "PMI", dir: [1, 0.2, 0.5], color: "#8fe9ff" },
-  { id: 1, label: "IA", dir: [-0.6, 0.8, 0.4], color: "#d5b36a" },
+  { id: 1, label: "AI", dir: [-0.6, 0.8, 0.4], color: "#d5b36a" }, // IA -> AI
   { id: 2, label: "ENGINEER", dir: [0.4, 0.7, -0.6], color: "#8ea0d8" },
   { id: 3, label: "FLEET", dir: [-0.8, -0.4, 0.5], color: "#95d1b3" },
   { id: 4, label: "MANAGEMENT", dir: [0.7, -0.6, -0.4], color: "#b29bcb" },
@@ -16,130 +18,19 @@ const CONCEPTS = [
   { id: 7, label: "VAN", dir: [0.1, -0.9, 0.8], color: "#d9c6a2" },
 ];
 
-type Phase = "settle" | "probing" | "selecting" | "transfer";
-
-function seeded(seed: number) {
-  const x = Math.sin(seed * 127.1) * 43758.5453123;
-  return x - Math.floor(x);
-}
-
-function seededRange(seed: number, min: number, max: number) {
-  return min + (max - min) * seeded(seed);
-}
-
-function getProbeCandidates(targetIndex: number, fromIndex: number) {
-  const target = new THREE.Vector3(...CONCEPTS[targetIndex].dir).normalize();
-  const alternatives = CONCEPTS
-    .map((c, i) => ({
-      i,
-      score: i === targetIndex || i === fromIndex ? -999 : new THREE.Vector3(...c.dir).normalize().dot(target),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 2)
-    .map((x) => x.i);
-  return [targetIndex, ...alternatives];
-}
-
-function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate }: any) {
-  const pointsRef = useRef<THREE.Points>(null);
-  const { geometry, curve } = useMemo(() => {
-    const randomness = kind === "probe" ? 0.18 : 0.3;
-    const lift = kind === "probe" ? 0.06 : 0.12;
-    const midA = new THREE.Vector3().lerpVectors(start, end, 0.33).add(new THREE.Vector3(seededRange(seed + 1, -randomness, randomness), seededRange(seed + 2, -randomness, randomness) + lift, seededRange(seed + 3, -randomness, randomness)));
-    const midB = new THREE.Vector3().lerpVectors(start, end, 0.66).add(new THREE.Vector3(seededRange(seed + 4, -randomness, randomness), seededRange(seed + 5, -randomness, randomness) + lift * 0.6, seededRange(seed + 6, -randomness, randomness)));
-    const c = new THREE.CatmullRomCurve3([start.clone(), midA, midB, end.clone()]);
-    const pts = c.getPoints(kind === "probe" ? 120 : 220);
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const offsets = new Float32Array(pts.length);
-    const randoms = new Float32Array(pts.length);
-    for (let i = 0; i < pts.length; i++) {
-      offsets[i] = i / (pts.length - 1);
-      randoms[i] = seeded(seed * 31 + i * 0.73);
-    }
-    geo.setAttribute("aOffset", new THREE.BufferAttribute(offsets, 1));
-    geo.setAttribute("aRandom", new THREE.BufferAttribute(randoms, 1));
-    return { geometry: geo, curve: c };
-  }, [start, end, seed, kind]);
-
-  useFrame((state) => {
-    if (!pointsRef.current) return;
-    const material = pointsRef.current.material as THREE.ShaderMaterial;
-    material.uniforms.uTime.value = state.clock.getElapsedTime();
-    material.uniforms.uEnergy.value = THREE.MathUtils.lerp(material.uniforms.uEnergy.value, active ? 1 : 0, active ? 0.12 : 0.06);
-    if (kind === "probe") {
-      const head = (state.clock.getElapsedTime() * 0.38 + seed * 0.173) % 1;
-      material.uniforms.uProgress.value = head;
-      if (onHeadUpdate && material.uniforms.uEnergy.value > 0.03) onHeadUpdate(curve.getPointAt(head), material.uniforms.uEnergy.value * 0.55);
-    } else {
-      const nextProgress = THREE.MathUtils.lerp(material.uniforms.uProgress.value, active ? 1 : 0, active ? 0.065 : 0.035);
-      material.uniforms.uProgress.value = nextProgress;
-      if (onHeadUpdate && material.uniforms.uEnergy.value > 0.03) onHeadUpdate(curve.getPointAt(Math.min(nextProgress, 0.999)), material.uniforms.uEnergy.value);
-    }
-  });
-
-  return (
-    <points ref={pointsRef} geometry={geometry} renderOrder={kind === "transfer" ? 4 : 3}>
-      <shaderMaterial
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        uniforms={{
-          uTime: { value: 0 }, uProgress: { value: 0 }, uEnergy: { value: 0 },
-          uColor: { value: new THREE.Color(color) }, uMode: { value: kind === "probe" ? 0 : 1 },
-          uThickness: { value: kind === "probe" ? 3.5 : 6.0 }, uSeed: { value: seed }, 
-        }}
-        vertexShader={`
-          uniform float uTime; uniform float uProgress; uniform float uEnergy; uniform float uMode; uniform float uThickness; uniform float uSeed;
-          attribute float aOffset; attribute float aRandom;
-          varying float vAlpha;
-          void main() {
-            vec3 pos = position;
-            pos += vec3(sin(uTime * 1.8 + aOffset * 18.0 + uSeed * 7.0), cos(uTime * 1.6 + aOffset * 14.0 + uSeed * 5.0), sin(uTime * 2.0 + aOffset * 12.0 + uSeed * 9.0)) * 0.003 * (0.4 + aRandom * 0.6);
-            float head = uProgress;
-            float headGlow = 1.0 - smoothstep(0.0, 0.085, abs(aOffset - head));
-            float tail = (1.0 - smoothstep(0.0, 0.26, head - aOffset)) * step(aOffset, head);
-            float body = headGlow;
-            if (uMode > 0.5) body = max(headGlow, tail * 0.75);
-            vAlpha = body * uEnergy;
-            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-            gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (1.5 + vAlpha * uThickness) * (26.0 / -mvPosition.z); 
-          }
-        `}
-        fragmentShader={`
-          uniform vec3 uColor; varying float vAlpha;
-          void main() {
-            if (vAlpha < 0.02) discard;
-            float d = length(gl_PointCoord - vec2(0.5));
-            float soft = 1.0 - smoothstep(0.0, 0.5, d);
-            float core = 1.0 - smoothstep(0.0, 0.18, d);
-            gl_FragColor = vec4(uColor * (0.9 + core * 0.5), soft * vAlpha * 0.9); 
-          }
-        `}
-      />
-    </points>
-  );
-}
-
 function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], isThinking: boolean }) {
   const { scene } = useGLTF("/Brain_Model.glb");
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [targetIndex, setTargetIndex] = useState(1);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [probeTargets, setProbeTargets] = useState<number[]>([]);
-  const [phase, setPhase] = useState<Phase>("settle");
+  const [targetIndex, setTargetIndex] = useState(0);
+  const [isFlashing, setIsFlashing] = useState(false);
   
-  const currentIndexRef = useRef(0);
-  const probeHeads = useRef([{ pos: new THREE.Vector3(), active: 0 }, { pos: new THREE.Vector3(), active: 0 }, { pos: new THREE.Vector3(), active: 0 }]);
-  const transferHead = useRef({ pos: new THREE.Vector3(), active: 0 });
   const currentFocusPoint = useRef(new THREE.Vector3());
   const currentIntensity = useRef(0);
   const currentColor = useRef(new THREE.Color("#555"));
 
-  const { fusedGeometry, hotspots } = useMemo(() => {
-    if (!scene) return { fusedGeometry: null, hotspots: [] };
+  const { fusedGeometry, hotspots, languageNode } = useMemo(() => {
+    if (!scene) return { fusedGeometry: null, hotspots: [], languageNode: new THREE.Vector3() };
 
     const positionsArray: number[] = [];
     scene.traverse((child: any) => {
@@ -156,7 +47,7 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
       }
     });
 
-    if (positionsArray.length === 0) return { fusedGeometry: null, hotspots: [] };
+    if (positionsArray.length === 0) return { fusedGeometry: null, hotspots: [], languageNode: new THREE.Vector3() };
 
     const fusedGeo = new THREE.BufferGeometry();
     fusedGeo.setAttribute("position", new THREE.Float32BufferAttribute(positionsArray, 3));
@@ -190,148 +81,174 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
       }
       return { ...concept, pos: new THREE.Vector3().fromBufferAttribute(positions as THREE.BufferAttribute, closestIdx) };
     });
+
+    // 2. CENTRO DEL LENGUAJE (Simulamos el Área de Broca en el hemisferio frontal izquierdo)
+    let langIdx = 0; let langMaxDot = -Infinity;
+    const langDir = new THREE.Vector3(-0.8, 0.2, 0.5).normalize();
+    const vLang = new THREE.Vector3();
+    for (let i = 0; i < positions.count; i += 10) {
+      vLang.fromBufferAttribute(positions as THREE.BufferAttribute, i);
+      const dot = vLang.normalize().dot(langDir);
+      if (dot > langMaxDot) { langMaxDot = dot; langIdx = i; }
+    }
+    const langPos = new THREE.Vector3().fromBufferAttribute(positions as THREE.BufferAttribute, langIdx);
     
-    return { fusedGeometry: fusedGeo, hotspots: spots };
+    return { fusedGeometry: fusedGeo, hotspots: spots, languageNode: langPos };
   }, [scene]);
 
-  // EL CEREBRO ESCUCHA AL CHAT
+  // REACCIÓN AL CHAT
   useEffect(() => {
     if (activeNodes && activeNodes.length > 0 && hotspots.length > 0) {
       const primaryTarget = activeNodes[0];
       if (primaryTarget < hotspots.length) {
         setTargetIndex(primaryTarget);
-        setSelectedIndex(primaryTarget);
-        setPhase("transfer"); 
+        setIsFlashing(true); // Encendemos el brillo intenso
         
-        setTimeout(() => {
-          currentIndexRef.current = primaryTarget;
-          setCurrentIndex(primaryTarget);
-          setPhase("settle");
-        }, 2500);
+        // Se apaga tras 5 segundos, volviendo al estado base
+        const timer = setTimeout(() => {
+          setIsFlashing(false);
+        }, 5000);
+        return () => clearTimeout(timer);
       }
     }
   }, [activeNodes, hotspots]);
 
-  // Ciclo automático si no hay interacción
-  useEffect(() => {
-    if (!hotspots || hotspots.length === 0 || (activeNodes && activeNodes.length > 0)) return;
-    let timers: any[] = [];
-    const runCycle = () => {
-      const from = currentIndexRef.current;
-      const to = (from + 1) % hotspots.length;
-      const candidates = getProbeCandidates(to, from);
-      setTargetIndex(to); setSelectedIndex(null); setProbeTargets(candidates); setPhase("probing");
-      timers.push(setTimeout(() => { setSelectedIndex(to); setPhase("selecting"); }, 1600));
-      timers.push(setTimeout(() => setPhase("transfer"), 2400));
-      timers.push(setTimeout(() => { currentIndexRef.current = to; setCurrentIndex(to); setPhase("settle"); }, 4300));
-      timers.push(setTimeout(() => runCycle(), 7000));
-    };
-    timers.push(setTimeout(() => runCycle(), 900));
-    return () => timers.forEach(clearTimeout);
-  }, [hotspots, activeNodes]);
-
   useFrame((state) => {
     if (!materialRef.current || !hotspots || hotspots.length === 0) return;
-    const focusIndex = phase === "settle" ? currentIndex : selectedIndex !== null ? selectedIndex : targetIndex;
-    const focusSpot = hotspots[focusIndex];
+    
+    const focusSpot = hotspots[targetIndex];
     if (!focusSpot) return;
 
-    const baseThinkingGlow = isThinking ? 0.6 : 0;
-    const desiredIntensity = phase === "probing" ? 0.25 : phase === "selecting" ? 0.55 : phase === "transfer" ? 0.9 : 1.0;
-    
-    currentFocusPoint.current.lerp(focusSpot.pos, phase === "transfer" ? 0.06 : 0.035);
-    currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity + baseThinkingGlow, 0.08);
-    currentColor.current.lerp(new THREE.Color(focusSpot.color), 0.04);
+    // Lógicas de intensidad
+    const desiredIntensity = isFlashing ? 1.0 : 0.0;
+    currentFocusPoint.current.lerp(focusSpot.pos, 0.05);
+    currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity, 0.08);
+    currentColor.current.lerp(new THREE.Color(focusSpot.color), 0.05);
     
     const uniforms = materialRef.current.uniforms;
     uniforms.uTime.value = state.clock.getElapsedTime();
     uniforms.uFocusPoint.value.copy(currentFocusPoint.current);
     uniforms.uFocusIntensity.value = currentIntensity.current;
     uniforms.uColorFocus.value.copy(currentColor.current);
-    uniforms.uRayPos.value.copy(transferHead.current.pos);
-    uniforms.uRayActive.value = THREE.MathUtils.lerp(uniforms.uRayActive.value, transferHead.current.active, 0.12);
-    for (let i = 0; i < 3; i++) {
-      (uniforms.uProbePos.value[i] as THREE.Vector3).copy(probeHeads.current[i].pos);
-      uniforms.uProbeWeight.value[i] = THREE.MathUtils.lerp(uniforms.uProbeWeight.value[i], probeHeads.current[i].active, 0.12);
-      probeHeads.current[i].active *= 0.92;
-    }
-    transferHead.current.active *= 0.94;
+    
+    uniforms.uLanguagePoint.value.copy(languageNode);
+    uniforms.uThinkingPulse.value = isThinking ? 1.0 : 0.0;
   });
 
   if (!fusedGeometry || !hotspots || hotspots.length === 0) return null;
 
   return (
     <group scale={2.8}>
-      <points geometry={fusedGeometry} renderOrder={2}>
+      <points geometry={fusedGeometry}>
         <shaderMaterial
           ref={materialRef} transparent depthWrite={false} blending={THREE.AdditiveBlending}
           uniforms={{
-            uTime: { value: 0 }, uFocusPoint: { value: new THREE.Vector3() }, uFocusIntensity: { value: 0 },
-            uRayPos: { value: new THREE.Vector3() }, uRayActive: { value: 0 },
-            uProbePos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
-            uProbeWeight: { value: [0, 0, 0] }, 
-            uColorBase: { value: new THREE.Color("#181a20") }, 
-            uColorProbe: { value: new THREE.Color("#4a5568") }, 
+            uTime: { value: 0 }, 
+            uFocusPoint: { value: new THREE.Vector3() }, 
+            uFocusIntensity: { value: 0 },
             uColorFocus: { value: new THREE.Color("#ffffff") }, 
+            
+            uLanguagePoint: { value: new THREE.Vector3() },
+            uColorLanguage: { value: new THREE.Color("#5e81ac") }, // Color azulado para el lenguaje
+            uThinkingPulse: { value: 0 },
+            
+            uColorBase: { value: new THREE.Color("#111318") }, // Fondo casi negro
           }}
           vertexShader={`
-            uniform float uTime; uniform vec3 uFocusPoint; uniform float uFocusIntensity; uniform vec3 uRayPos; uniform float uRayActive; uniform vec3 uProbePos[3]; uniform float uProbeWeight[3];
-            attribute float aRandom; attribute float aRadialBias;
-            varying float vProbe; varying float vRay; varying float vFocus;
+            uniform float uTime; 
+            uniform vec3 uFocusPoint; 
+            uniform float uFocusIntensity; 
+            uniform vec3 uLanguagePoint;
+            uniform float uThinkingPulse;
+            
+            attribute float aRandom; 
+            attribute float aRadialBias;
+            
+            varying float vFocus; 
+            varying float vLang;
+
             void main() {
               vec3 pos = position;
               float edge = smoothstep(0.35, 1.0, aRadialBias);
-              pos += vec3(sin(uTime * 0.9 + pos.y * 8.0 + aRandom * 6.2831), cos(uTime * 0.8 + pos.z * 7.0 + aRandom * 7.2831), sin(uTime * 1.0 + pos.x * 9.0 + aRandom * 8.2831)) * 0.0035 * mix(0.35, 1.0, edge);
-              pos += normalize(position) * sin(uTime * 0.5 + aRandom * 10.0) * 0.0022;
-              float probe = 0.0;
-              for (int i = 0; i < 3; i++) { probe += smoothstep(0.34, 0.0, distance(pos, uProbePos[i])) * uProbeWeight[i]; }
-              float ray = smoothstep(0.42, 0.0, distance(pos, uRayPos)) * uRayActive * (0.55 + aRandom * 0.45);
-              float focus = smoothstep(0.75, 0.0, distance(pos, uFocusPoint)) * uFocusIntensity;
-              vProbe = clamp(probe, 0.0, 1.0); vRay = clamp(ray, 0.0, 1.0); vFocus = clamp(focus, 0.0, 1.0);
+              
+              // Movimiento base de las partículas
+              pos += vec3(sin(uTime * 0.9 + pos.y * 8.0 + aRandom * 6.28), cos(uTime * 0.8 + pos.z * 7.0 + aRandom * 7.28), sin(uTime * 1.0 + pos.x * 9.0 + aRandom * 8.28)) * 0.0035 * mix(0.35, 1.0, edge);
+              
+              float focus = smoothstep(0.85, 0.0, distance(pos, uFocusPoint)) * uFocusIntensity;
+              float lang = smoothstep(0.65, 0.0, distance(pos, uLanguagePoint)); // Brillo fijo
+              
+              vFocus = clamp(focus, 0.0, 1.0);
+              vLang = clamp(lang, 0.0, 1.0);
+              
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
               
-              // Brillo nativo compensatorio
-              float size = 1.8 + vProbe * 3.5 + vRay * 6.0 + vFocus * 5.5;
-              gl_PointSize = size * (24.0 / -mvPosition.z);
+              // 3. EL LATIDO (Pulsación general y tamaño)
+              float heartbeat = 1.0 + (sin(uTime * 5.0) * 0.3 * uThinkingPulse);
+              float size = 1.5 + vLang * 2.0 + vFocus * 8.0;
+              
+              gl_PointSize = size * heartbeat * (24.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
-            uniform vec3 uColorBase; uniform vec3 uColorProbe; uniform vec3 uColorFocus;
-            varying float vProbe; varying float vRay; varying float vFocus;
+            uniform vec3 uColorBase; 
+            uniform vec3 uColorFocus; 
+            uniform vec3 uColorLanguage;
+            
+            varying float vFocus; 
+            varying float vLang;
+
             void main() {
               float d = length(gl_PointCoord - vec2(0.5));
               if (d > 0.5) discard;
+              
               float soft = 1.0 - smoothstep(0.0, 0.5, d);
               float core = 1.0 - smoothstep(0.0, 0.16, d);
-              vec3 color = mix(mix(uColorBase, uColorProbe, vProbe * 0.7), uColorFocus, max(vFocus, vRay));
               
-              float alpha = (0.2 + vProbe * 0.3 + vFocus * 0.6 + vRay * 0.9) * soft;
-              gl_FragColor = vec4(color + core * (vRay * 0.7 + vFocus * 0.4), alpha);
+              vec3 color = uColorBase;
+              color = mix(color, uColorLanguage, vLang * 0.6);
+              color = mix(color, uColorFocus, vFocus);
+              
+              // El lenguaje siempre tiene un 30% de intensidad base
+              float alpha = (0.15 + vLang * 0.3 + vFocus * 0.9) * soft;
+              
+              gl_FragColor = vec4(color + core * (vFocus * 0.5), alpha);
             }
           `}
         />
       </points>
-      {hotspots[currentIndex] && probeTargets.slice(0, 3).map((candidateIndex, i) => (
-        <SemanticFilament key={`probe-${candidateIndex}-${i}`} kind="probe" seed={candidateIndex * 17 + i * 3} start={hotspots[currentIndex].pos} end={hotspots[candidateIndex].pos} color={hotspots[candidateIndex].color} active={phase === "probing" || (phase === "selecting" && selectedIndex === candidateIndex)} onHeadUpdate={(pos: any, energy: any) => { probeHeads.current[i].pos.copy(pos); probeHeads.current[i].active = energy; }} />
-      ))}
-      {hotspots[currentIndex] && hotspots[targetIndex] && (
-        <SemanticFilament kind="transfer" seed={91 + targetIndex} start={hotspots[currentIndex].pos} end={hotspots[targetIndex].pos} color={hotspots[targetIndex].color} active={phase === "transfer"} onHeadUpdate={(pos: any, energy: any) => { transferHead.current.pos.copy(pos); transferHead.current.active = energy; }} />
-      )}
-      {hotspots.map((spot, i) => (
-        <group key={i} position={spot.pos}>
-          <Html distanceFactor={8} position={[0.14, 0, 0]} center>
-            <div style={{ color: spot.color, fontSize: "9px", letterSpacing: "5px", textTransform: "uppercase", fontFamily: 'serif', fontStyle: "italic", whiteSpace: "nowrap", opacity: phase === "settle" && i === currentIndex ? 0.88 : (phase === "selecting" || phase === "transfer") && i === selectedIndex ? 0.22 : 0, transform: phase === "settle" && i === currentIndex ? "translate(14px, -50%)" : (phase === "selecting" || phase === "transfer") && i === selectedIndex ? "translate(8px, -50%)" : "translate(0px, -50%)", transition: "all 1.8s ease", textShadow: "0 0 18px rgba(0,0,0,0.75)", pointerEvents: "none" }}>
-              {spot.label}
-            </div>
-          </Html>
-        </group>
-      ))}
+
+      {/* Títulos HTML en Inglés */}
+      {hotspots.map((spot, i) => {
+        const isActive = isFlashing && i === targetIndex;
+        return (
+          <group key={i} position={spot.pos}>
+            <Html distanceFactor={8} position={[0.14, 0, 0]} center>
+              <div style={{ 
+                color: spot.color, fontSize: "9px", letterSpacing: "5px", textTransform: "uppercase", 
+                fontFamily: 'serif', fontStyle: "italic", whiteSpace: "nowrap", 
+                opacity: isActive ? 0.9 : 0.15, // Siempre ligeramente visibles
+                transform: isActive ? "translate(14px, -50%)" : "translate(0px, -50%)", 
+                transition: "all 1.0s ease", textShadow: "0 0 18px rgba(0,0,0,0.75)", pointerEvents: "none" 
+              }}>
+                {spot.label}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }
 
 export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: number[], isThinking: boolean }) {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsReady(true), 800); // Margen de seguridad para WebGL
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div style={{ width: "100%", height: "100vh", background: "#060708", position: "relative" }}>
       <Canvas 
@@ -341,6 +258,13 @@ export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: 
       >
         <Suspense fallback={null}>
           <BrainSculpture activeNodes={activeNodes} isThinking={isThinking} />
+          
+          {isReady && (
+            <EffectComposer disableNormalPass multisampling={0}> 
+              <Bloom luminanceThreshold={0.15} mipmapBlur intensity={1.8} radius={0.5} />
+              <Noise opacity={0.07} />
+            </EffectComposer>
+          )}
         </Suspense>
         <OrbitControls enableDamping dampingFactor={0.05} minDistance={4} maxDistance={15} />
       </Canvas>
