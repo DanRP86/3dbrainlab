@@ -74,7 +74,7 @@ function AmbientNoiseField({
 
   const geometry = useMemo(() => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const count = isMobile ? 1800 : 3200;
+    const count = isMobile ? 2200 : 3800;
 
     const positions = new Float32Array(count * 3);
     const randoms = new Float32Array(count);
@@ -717,7 +717,7 @@ function BrainSculpture({
               float fineJitter =
                 sin(uTime * 1.8 + pos.z * 11.0 + aRandom * 9.2831) * 0.0015;
 
-              float breathPush = (0.0038 + uThinkingBoost * 0.0022) * (0.6 + uBreath * 0.8);
+              float breathPush = (0.0052 + uThinkingBoost * 0.0022) * (0.6 + uBreath * 0.8);
 
               pos += normalize(position) * (slowWave + fineJitter + breathPush * edge);
 
@@ -897,7 +897,7 @@ export default function VisualBrain({
           zIndex: 3,
           pointerEvents: "none",
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-          opacity: 0.05,
+          opacity: 0.07,
           mixBlendMode: "soft-light",
         }}
       />
