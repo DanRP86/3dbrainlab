@@ -131,7 +131,7 @@ function AmbientNoiseField({
       <shaderMaterial
         transparent
         depthWrite={false}
-        depthTest={true}
+        depthTest={false}
         blending={THREE.AdditiveBlending}
         uniforms={ambientUniforms}
         vertexShader={`
@@ -157,11 +157,11 @@ function AmbientNoiseField({
 
             float pulse = 0.5 + 0.5 * sin(uTime * 0.8 + aRandom * 18.0);
             vMix = pulse;
-            vAlpha = (0.12 + pulse * 0.10 + uThinking * 0.07) * (0.65 + aRandom * 0.35) * uLife;
+            vAlpha = (0.22 + pulse * 0.16 + uThinking * 0.12) * (0.7 + aRandom * 0.35) * uLife;
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (3.2 + aScale * 3.6 + uThinking * 1.3) * (22.0 / -mvPosition.z);
+            gl_PointSize = (4.8 + aScale * 5.2 + uThinking * 1.8) * (26.0 / -mvPosition.z);
           }
         `}
         fragmentShader={`
@@ -180,7 +180,7 @@ function AmbientNoiseField({
             vec3 color = mix(uColorA, uColorB, vMix);
             color += core * 0.05;
 
-            gl_FragColor = vec4(color, vAlpha * soft * 1.08);
+            gl_FragColor = vec4(color, vAlpha * soft * 1.25);
           }
         `}
       />
@@ -898,12 +898,12 @@ export default function VisualBrain({
         style={{
           position: "absolute",
           inset: 0,
-          zIndex: 0,
+          zIndex: 3,
           pointerEvents: "none",
-          background:
-            "radial-gradient(circle at 48% 48%, rgba(68,94,128,0.28), rgba(7,9,12,0.96) 64%)",
-          filter: "blur(42px)",
-          transform: "scale(1.08)",
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          opacity: 0.16,
+          mixBlendMode: "screen",
+          filter: "contrast(180%) brightness(140%)",
         }}
       />
       <div
@@ -913,7 +913,7 @@ export default function VisualBrain({
           zIndex: 2,
           pointerEvents: "none",
           background:
-            "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.40) 68%, rgba(0,0,0,0.78) 100%)",
+            "radial-gradient(circle at 50% 48%, rgba(110,140,180,0.38), rgba(20,28,38,0.34) 24%, rgba(6,8,12,0.94) 68%)",
         }}
       />
       <div
