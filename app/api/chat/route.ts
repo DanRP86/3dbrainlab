@@ -124,7 +124,7 @@ export async function POST(req: Request) {
           functionResponse = await fs.readFile(cvPath, 'utf-8');
         } 
         else if (functionName === 'get_faqs') {
-          const faqsPath = path.join(process.cwd(), 'data', 'faqs.json'); // Asegúrate de que se llama así
+          const faqsPath = path.join(process.cwd(), 'data', 'faq_knowledge.json'); // Asegúrate de que se llama así
           functionResponse = await fs.readFile(faqsPath, 'utf-8');
         } 
         else if (functionName === 'send_contact_email') {
