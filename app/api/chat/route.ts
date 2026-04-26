@@ -13,11 +13,19 @@ async function getLocalData(fileName: string) {
       path.join(process.cwd(), 'data', fileName),
       path.join(process.cwd(), fileName)
     ];
+
     for (const p of pathsToTry) {
-      try { return await fs.readFile(p, 'utf-8'); } catch (e) { continue; }
+      try {
+        return await fs.readFile(p, 'utf-8');
+      } catch (e) {
+        continue;
+      }
     }
+
     return null;
-  } catch (error) { return null; }
+  } catch (error) {
+    return null;
+  }
 }
 
 // 1. TUS TOOLS ORIGINALES INTACTAS
@@ -56,12 +64,31 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   }
 ];
 
+function extractNodes(rawContent: string): number[] {
+  const match = rawContent.match(/Nodes:\s*\[([^\]]+)\]/i);
+  if (!match) return [];
+
+  return match[1]
+    .split(",")
+    .map((n) => parseInt(n.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 7)
+    .slice(0, 2);
+}
+
+function stripNodes(rawContent: string): string {
+  return rawContent
+    .replace(/\n?\s*Nodes:\s*\[[^\]]+\]\s*$/i, "")
+    .trim();
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const messages = body.messages || body.history || [];
 
-    const summaryContent = await getLocalData('summary.txt') || "Daniel is an Asset Portfolio & Operations Leader.";
+    const summaryContent =
+      (await getLocalData('summary.txt')) ||
+      "Daniel is an Asset Portfolio & Operations Leader.";
 
     // 2. TU PROMPT EXACTO (+ una regla estricta de formato al final)
     const systemMessage: OpenAI.Chat.ChatCompletionMessageParam = {
@@ -103,23 +130,30 @@ export async function POST(req: Request) {
 
       IMPORTANT: You MUST append the chosen nodes at the very end of your response in this exact format:
       Nodes: [X, Y]
+
+      FINAL FORMAT RULE:
+      - Always end with exactly one line in the format: Nodes: [X, Y]
+      - X and Y must be integers between 0 and 7
+      - Do not explain the nodes
       `
     };
 
-    const apiMessages = [systemMessage, ...messages];
+    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      systemMessage,
+      ...messages
+    ];
 
-    // 3. PRIMERA LLAMADA A OPENAI
-    const response = await openai.chat.completions.create({
+    const firstResponse = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: apiMessages,
-      tools: tools,
+      tools,
       tool_choice: 'auto',
+      temperature: 0.4,
     });
 
-    let responseMessage = response.choices[0].message;
+    let responseMessage = firstResponse.choices[0].message;
 
-    // 4. LÓGICA DE EJECUCIÓN DE TOOLS
-    if (responseMessage.tool_calls) {
+    if (responseMessage.tool_calls?.length) {
       apiMessages.push(responseMessage);
 
       for (const toolCall of responseMessage.tool_calls) {
@@ -128,24 +162,32 @@ export async function POST(req: Request) {
 
         try {
           if (functionName === 'get_detailed_cv') {
-            functionResponse = await getLocalData('professional_data.json') || "CV data missing.";
-          } 
-          else if (functionName === 'get_faqs') {
-            functionResponse = await getLocalData('faqs.json') || "FAQ data missing.";
-          } 
-          else if (functionName === 'send_contact_email') {
+            functionResponse =
+              (await getLocalData('professional_data.json')) || "CV data missing.";
+          } else if (functionName === 'get_faqs') {
+            functionResponse =
+              (await getLocalData('faqs.json')) || "FAQ data missing.";
+          } else if (functionName === 'send_contact_email') {
             const args = JSON.parse(toolCall.function.arguments);
+
             const transporter = nodemailer.createTransport({
               service: 'gmail',
-              auth: { user: process.env.GMAIL_ADDRESS, pass: process.env.GMAIL_APP_PASSWORD }
+              auth: {
+                user: process.env.GMAIL_ADDRESS,
+                pass: process.env.GMAIL_APP_PASSWORD
+              }
             });
+
             await transporter.sendMail({
               from: process.env.GMAIL_ADDRESS,
               to: process.env.GMAIL_ADDRESS,
               subject: `Digital Twin Contact: ${args.name} ${args.surname}`,
               text: `Email: ${args.user_email}\n\nMessage:\n${args.message_to_daniel}`
             });
+
             functionResponse = "Email successfully sent to Daniel.";
+          } else {
+            functionResponse = "Unknown tool.";
           }
         } catch (e) {
           functionResponse = "Error executing tool.";
@@ -158,40 +200,31 @@ export async function POST(req: Request) {
         });
       }
 
-      // 5. SEGUNDA LLAMADA (Para que OpenAI integre los datos de los JSON)
       const secondResponse = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: apiMessages,
+        temperature: 0.4,
       });
+
       responseMessage = secondResponse.choices[0].message;
     }
-    
-    const rawContent = responseMessage.content || "";
-    
-    const nodeMatch = rawContent.match(/Nodes:\s*\[([^\]]+)\]/i);
-    
-    let nodes: number[] = [];
-    if (nodeMatch) {
-      nodes = nodeMatch[1]
-        .split(",")
-        .map((n) => parseInt(n.trim(), 10))
-        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 7);
-    }
-    
-    const cleanContent = rawContent
-      .replace(/\n?\s*Nodes:\s*\[[^\]]+\]\s*$/i, "")
-      .trim();
-    
-    return NextResponse.json({
-      content: cleanContent,
-      nodes,
-    });
-    
-    return NextResponse.json({ 
-      content: responseMessage.content 
-    });
 
+    const rawContent = responseMessage.content || "";
+    let nodes = extractNodes(rawContent);
+    const content = stripNodes(rawContent);
+
+    if (nodes.length < 2) {
+      nodes = [0, 4];
+    }
+
+    return NextResponse.json({
+      content,
+      nodes
+    });
   } catch (error: any) {
-    return NextResponse.json({ error: "Server Error", details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server Error", details: error.message },
+      { status: 500 }
+    );
   }
 }
