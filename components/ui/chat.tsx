@@ -27,8 +27,12 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
     if (!input.trim() || isThinking) return;
 
     const userMsg = input.trim();
+    const newUserMessage: Message = { role: 'user', content: userMsg };
+    
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    // Actualizamos la lista de mensajes localmente
+    const updatedMessages = [...messages, newUserMessage];
+    setMessages(updatedMessages);
     setIsThinking(true);
 
     try {
@@ -36,17 +40,28 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMsg,
-          history: messages.slice(-6) // Enviamos solo los últimos 6 mensajes para contexto
+          // IMPORTANTE: Enviamos 'messages' para que la API lo entienda
+          messages: updatedMessages.slice(-8) 
         }),
       });
 
       const data = await response.json();
 
-      if (data.reply) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-        // Notificamos al orquestador (page.tsx) los nodos activos
-        if (data.nodes) onNewResponse(data.nodes);
+      // Buscamos 'content' que es lo que devuelve nuestra API
+      if (data.content) {
+        const assistantRawContent = data.content;
+
+        // 1. Extraemos los nodos (ej: "Nodes: [1, 2]")
+        const nodeMatch = assistantRawContent.match(/Nodes:\s*\[(\d+),\s*(\d+)\]/);
+        if (nodeMatch) {
+          const nodeIds = [parseInt(nodeMatch[1]), parseInt(nodeMatch[2])];
+          onNewResponse(nodeIds); // El cerebro se mueve
+        }
+
+        // 2. Limpiamos el texto para que el usuario no vea los IDs de los nodos
+        const cleanContent = assistantRawContent.replace(/Nodes:\s*\[\d+,\s*\d+\]/, '').trim();
+
+        setMessages(prev => [...prev, { role: 'assistant', content: cleanContent }]);
       }
     } catch (error) {
       console.error("Error en el chat:", error);
