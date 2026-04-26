@@ -56,11 +56,11 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
       if (Array.isArray(data.nodes) && data.nodes.length > 0) {
         onNewResponse(data.nodes);
       } else {
-        onNewResponse([0, 4]);
+        onNewResponse([]);
       }
     } catch (error) {
       console.error("Error en el chat:", error);
-      onNewResponse([0, 4]);
+      onNewResponse([]);
     } finally {
       setIsThinking(false);
     }
