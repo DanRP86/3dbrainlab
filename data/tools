@@ -1,0 +1,34 @@
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "get_detailed_cv",
+      description: "Call this tool to get Daniel's full detailed CV (JSON format). Use it ONLY when the user asks specific career questions."
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_faqs",
+      description: "Call this tool if the user asks about specific technologies (like n8n, Microsoft, AI agents), personal projects, or any 'What are you doing/studying' type of questions."
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_contact_email",
+      description: "Call this tool ONLY when the user explicitly wants to leave a message, contact Daniel, or hire him, AND you have already collected their Name, Surname, Email, and Message.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          surname: { type: "string" },
+          user_email: { type: "string" },
+          message_to_daniel: { type: "string" }
+        },
+        required: ["name", "surname", "user_email", "message_to_daniel"],
+        additionalProperties: false
+      }
+    }
+  }
+];
