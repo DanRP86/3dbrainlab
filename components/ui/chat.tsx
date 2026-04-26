@@ -18,19 +18,18 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al final de los mensajes
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [messages]);
+  }, [messages, isThinking]);
 
   const sendMessage = async () => {
     if (!input.trim() || isThinking) return;
 
     const userMsg = input.trim();
     const newUserMessage: Message = { role: 'user', content: userMsg };
-    
+
     setInput('');
-    // Actualizamos la lista de mensajes localmente
+
     const updatedMessages = [...messages, newUserMessage];
     setMessages(updatedMessages);
     setIsThinking(true);
@@ -40,31 +39,28 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // IMPORTANTE: Enviamos 'messages' para que la API lo entienda
-          messages: updatedMessages.slice(-8) 
+          messages: updatedMessages.slice(-8),
         }),
       });
 
       const data = await response.json();
+      console.log('API data:', data);
 
-      // Buscamos 'content' que es lo que devuelve nuestra API
       if (data.content) {
-        const assistantRawContent = data.content;
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: data.content }
+        ]);
+      }
 
-        // 1. Extraemos los nodos (ej: "Nodes: [1, 2]")
-        const nodeMatch = assistantRawContent.match(/Nodes:\s*\[(\d+),\s*(\d+)\]/);
-        if (nodeMatch) {
-          const nodeIds = [parseInt(nodeMatch[1]), parseInt(nodeMatch[2])];
-          onNewResponse(nodeIds); // El cerebro se mueve
-        }
-
-        // 2. Limpiamos el texto para que el usuario no vea los IDs de los nodos
-        const cleanContent = assistantRawContent.replace(/Nodes:\s*\[\d+,\s*\d+\]/, '').trim();
-
-        setMessages(prev => [...prev, { role: 'assistant', content: cleanContent }]);
+      if (Array.isArray(data.nodes) && data.nodes.length > 0) {
+        onNewResponse(data.nodes);
+      } else {
+        onNewResponse([0, 4]);
       }
     } catch (error) {
       console.error("Error en el chat:", error);
+      onNewResponse([0, 4]);
     } finally {
       setIsThinking(false);
     }
@@ -75,14 +71,20 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 mb-4 scrollbar-hide">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
-              m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-200'
-            }`}>
+            <div
+              className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-200'
+              }`}
+            >
               {m.content}
             </div>
           </div>
         ))}
-        {isThinking && <div className="text-xs text-white/30 animate-pulse">Daniel está pensando...</div>}
+        {isThinking && (
+          <div className="text-xs text-white/30 animate-pulse">
+            Daniel está pensando...
+          </div>
+        )}
       </div>
 
       <div className="relative">
@@ -93,7 +95,7 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
           placeholder="Pregunta algo a mi gemelo digital..."
           className="w-full bg-white/5 border border-white/20 rounded-full py-3 px-5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
         />
-        <button 
+        <button
           onClick={sendMessage}
           className="absolute right-2 top-1.5 bg-blue-500 hover:bg-blue-400 p-1.5 rounded-full transition-colors"
         >
@@ -107,7 +109,7 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
 function ArrowIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14M12 5l7 7-7 7"/>
+      <path d="M5 12h14M12 5l7 7-7 7" />
     </svg>
   );
 }
