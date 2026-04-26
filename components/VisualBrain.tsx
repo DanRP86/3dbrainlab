@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useRef, useMemo, useState, useEffect, Suspense } from "react"; // <--- SUSPENSE AÑADIDO AQUÍ
+import React, { useRef, useMemo, useState, useEffect, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
-// 1. CONCEPTOS (Labels en inglés)
 const CONCEPTS = [
   { id: 0, label: "PMI", dir: [1, 0.2, 0.5], color: "#8fe9ff" },
   { id: 1, label: "AI", dir: [-0.6, 0.8, 0.4], color: "#d5b36a" }, 
@@ -26,6 +25,7 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
   const currentFocusPos = useRef(new THREE.Vector3());
   const corridorPulse = useRef(0);
   const corridorTrail = useRef(0);
+  const targetColor = useRef(new THREE.Color("#ffffff"));
 
   const data = useMemo(() => {
     if (!scene) return null;
@@ -36,8 +36,7 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
         child.updateMatrixWorld();
         const matrix = child.matrixWorld;
         const v = new THREE.Vector3();
-        
-        const stride = posAttr.count > 50000 ? 4 : 2; 
+        const stride = posAttr.count > 40000 ? 3 : 2; 
         for (let i = 0; i < posAttr.count; i += stride) {
           v.fromBufferAttribute(posAttr, i).applyMatrix4(matrix);
           positions.push(v.x, v.y, v.z);
@@ -68,17 +67,23 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
       return { ...c, pos: new THREE.Vector3().fromBufferAttribute(fusedGeo.attributes.position as any, closestIdx) };
     });
 
-    const langPos = spots[1].pos.clone().lerp(new THREE.Vector3(-0.5, 0.2, 0.8), 0.5);
+    // Área de Broca fija (Lenguaje)
+    const langPos = new THREE.Vector3(-0.4, 0.1, 0.6);
 
     return { fusedGeometry: fusedGeo, hotspots: spots, languageNode: langPos };
   }, [scene]);
 
+  // ESCUCHA ACTIVA DE NODOS
   useEffect(() => {
-    if (activeNodes?.length > 0) {
-      setTargetIndex(activeNodes[0]);
-      setIsFlashing(true);
-      const t = setTimeout(() => setIsFlashing(false), 4000);
-      return () => clearTimeout(t);
+    if (activeNodes && activeNodes.length > 0) {
+      const idx = activeNodes[0];
+      if (idx >= 0 && idx < CONCEPTS.length) {
+        setTargetIndex(idx);
+        targetColor.current.set(CONCEPTS[idx].color);
+        setIsFlashing(true);
+        const t = setTimeout(() => setIsFlashing(false), 6000);
+        return () => clearTimeout(t);
+      }
     }
   }, [activeNodes]);
 
@@ -87,22 +92,22 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
     const u = materialRef.current.uniforms;
     const focusSpot = data.hotspots[targetIndex];
 
-    currentFocusPos.current.lerp(focusSpot.pos, 0.05);
+    currentFocusPos.current.lerp(focusSpot.pos, 0.06);
     corridorPulse.current = THREE.MathUtils.lerp(corridorPulse.current, isThinking ? 1.0 : 0.0, 0.08);
-    corridorTrail.current = THREE.MathUtils.lerp(corridorTrail.current, isFlashing ? 1.0 : 0.15, 0.05);
+    corridorTrail.current = THREE.MathUtils.lerp(corridorTrail.current, isFlashing ? 1.0 : 0.05, 0.04);
 
     u.uTime.value = state.clock.getElapsedTime();
     u.uFocusPoint.value.copy(currentFocusPos.current);
     u.uLanguagePoint.value.copy(data.languageNode);
     u.uCorridorPulse.value = corridorPulse.current;
     u.uCorridorTrail.value = corridorTrail.current;
-    u.uColorFocus.value.lerp(new THREE.Color(focusSpot.color), 0.05);
+    u.uColorFocus.value.lerp(targetColor.current, 0.05);
   });
 
   if (!data) return null;
 
   return (
-    <group scale={3}>
+    <group scale={3.2}>
       <points geometry={data.fusedGeometry}>
         <shaderMaterial
           transparent
@@ -115,8 +120,8 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
             uCorridorPulse: { value: 0 },
             uCorridorTrail: { value: 0 },
             uColorFocus: { value: new THREE.Color("#ffffff") },
-            uColorLanguage: { value: new THREE.Color("#4a9eff") },
-            uColorBase: { value: new THREE.Color("#0a0c10") },
+            uColorLanguage: { value: new THREE.Color("#4fe9ff") },
+            uColorBase: { value: new THREE.Color("#0d0f14") },
           }}
           vertexShader={`
             uniform float uTime;
@@ -136,21 +141,23 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
 
             void main() {
               vec3 pos = position;
-              pos += normalize(position) * sin(uTime * 2.0 + aRandom * 10.0) * 0.002 * (1.0 + uCorridorPulse);
+              // Animación de respiración
+              float breathe = sin(uTime * 1.2 + aRandom * 10.0) * 0.003;
+              pos += normalize(position) * breathe * (1.0 + uCorridorPulse * 2.0);
               
-              float focus = smoothstep(0.4, 0.0, distance(pos, uFocusPoint));
-              float lang = smoothstep(0.5, 0.0, distance(pos, uLanguagePoint));
+              float focus = smoothstep(0.45, 0.0, distance(pos, uFocusPoint)) * uCorridorTrail;
+              float lang = smoothstep(0.55, 0.0, distance(pos, uLanguagePoint));
               
-              float corridor = smoothstep(0.15, 0.0, sdSegment(pos, uLanguagePoint, uFocusPoint));
-              float cPulse = corridor * (0.4 + 0.6 * sin(uTime * 8.0 + pos.y * 15.0));
-              float corridorInf = (corridor * uCorridorTrail) + (cPulse * uCorridorPulse * 0.6);
-
-              vInfluence = clamp(max(focus, corridorInf), 0.0, 1.0);
+              // Rayo de pensamiento
+              float corridor = smoothstep(0.18, 0.0, sdSegment(pos, uLanguagePoint, uFocusPoint));
+              float pulse = corridor * (0.3 + 0.7 * sin(uTime * 10.0 - distance(pos, uLanguagePoint) * 5.0)) * uCorridorPulse;
+              
+              vInfluence = clamp(focus + pulse + (corridor * uCorridorTrail * 0.4), 0.0, 1.0);
               vLang = lang;
 
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = (1.4 + vLang * 1.5 + vInfluence * 9.0) * (25.0 / -mvPosition.z);
+              gl_PointSize = (1.5 + vLang * 1.2 + vInfluence * 8.0) * (26.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
@@ -159,38 +166,43 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
             void main() {
               float d = length(gl_PointCoord - vec2(0.5));
               if (d > 0.5) discard;
-              vec3 color = mix(uColorBase, uColorLanguage, vLang * 0.4);
+              vec3 color = mix(uColorBase, uColorLanguage, vLang * 0.35);
               color = mix(color, uColorFocus, vInfluence);
-              float alpha = (0.15 + vLang * 0.2 + vInfluence * 0.85) * (1.0 - smoothstep(0.0, 0.5, d));
+              float alpha = (0.18 + vLang * 0.25 + vInfluence * 0.8) * (1.0 - smoothstep(0.0, 0.5, d));
               gl_FragColor = vec4(color, alpha);
             }
           `}
         />
       </points>
-      {data.hotspots.map((spot, i) => (
-        <group key={i} position={spot.pos}>
-          <Html distanceFactor={10} center>
-            <div style={{ 
-              color: spot.color, fontSize: "10px", letterSpacing: "4px", 
-              opacity: isFlashing && i === targetIndex ? 1 : 0.1,
-              transition: "all 0.8s ease", pointerEvents: "none", fontStyle: "italic",
-              whiteSpace: "nowrap"
-            }}>{spot.label}</div>
-          </Html>
-        </group>
-      ))}
+
+      {data.hotspots.map((spot, i) => {
+        const isSelected = i === targetIndex && isFlashing;
+        return (
+          <group key={i} position={spot.pos}>
+            <Html distanceFactor={10} center>
+              <div style={{ 
+                color: spot.color, fontSize: "10px", letterSpacing: "5px", 
+                opacity: isSelected ? 1 : 0.15,
+                background: "transparent", // ELIMINA LA CAJA NEGRA
+                padding: "0", margin: "0", border: "none",
+                transition: "all 0.6s ease", pointerEvents: "none", fontStyle: "italic",
+                whiteSpace: "nowrap", textShadow: "0 0 10px rgba(0,0,0,1)"
+              }}>{spot.label}</div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }
 
 export default function VisualBrain({ activeNodes, isThinking }: any) {
   return (
-    <div style={{ width: "100%", height: "100vh", background: "#050608", position: "relative" }}>
+    <div style={{ width: "100%", height: "100vh", background: "#060709", position: "relative" }}>
       {/* CAPA CSS: Ruido y Viñeta */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10,
-        background: 'radial-gradient(circle, transparent 20%, black 150%)',
-        opacity: 0.6
+        background: 'radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.8) 100%)'
       }} />
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 11,
@@ -198,11 +210,11 @@ export default function VisualBrain({ activeNodes, isThinking }: any) {
         opacity: 0.04, mixBlendMode: 'overlay'
       }} />
 
-      <Canvas camera={{ position: [0, 0, 7], fov: 35 }} gl={{ antialias: true, alpha: false }}>
+      <Canvas camera={{ position: [0, 0, 7.5], fov: 32 }} gl={{ antialias: true, alpha: false }}>
         <Suspense fallback={null}>
           <BrainSculpture activeNodes={activeNodes} isThinking={isThinking} />
         </Suspense>
-        <OrbitControls enableZoom={false} enablePan={false} makeDefault />
+        <OrbitControls enableZoom={false} enablePan={false} dampingFactor={0.05} autoRotate autoRotateSpeed={0.3} />
       </Canvas>
     </div>
   );
