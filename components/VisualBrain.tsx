@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo, useState, useEffect } from "react";
+import React, { useRef, useMemo, useState, useEffect, Suspense } from "react"; // <--- SUSPENSE AÑADIDO AQUÍ
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -23,7 +23,6 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
   const [targetIndex, setTargetIndex] = useState(0);
   const [isFlashing, setIsFlashing] = useState(false);
   
-  // Refs imperativas para animaciones ultra-suaves (React 19 friendly)
   const currentFocusPos = useRef(new THREE.Vector3());
   const corridorPulse = useRef(0);
   const corridorTrail = useRef(0);
@@ -38,7 +37,6 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
         const matrix = child.matrixWorld;
         const v = new THREE.Vector3();
         
-        // MUESTREO ADAPTATIVO: Saltamos puntos para ganar estabilidad
         const stride = posAttr.count > 50000 ? 4 : 2; 
         for (let i = 0; i < posAttr.count; i += stride) {
           v.fromBufferAttribute(posAttr, i).applyMatrix4(matrix);
@@ -50,7 +48,7 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
     const fusedGeo = new THREE.BufferGeometry();
     fusedGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     fusedGeo.center();
-    const radius = fusedGeo.computeBoundingSphere() || 1;
+    fusedGeo.computeBoundingSphere();
     const s = 1 / (fusedGeo.boundingSphere?.radius || 1);
     fusedGeo.scale(s, s, s);
 
@@ -70,7 +68,6 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
       return { ...c, pos: new THREE.Vector3().fromBufferAttribute(fusedGeo.attributes.position as any, closestIdx) };
     });
 
-    // Zona Lingüística (Broca)
     const langPos = spots[1].pos.clone().lerp(new THREE.Vector3(-0.5, 0.2, 0.8), 0.5);
 
     return { fusedGeometry: fusedGeo, hotspots: spots, languageNode: langPos };
@@ -90,7 +87,6 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
     const u = materialRef.current.uniforms;
     const focusSpot = data.hotspots[targetIndex];
 
-    // Animación imperativa
     currentFocusPos.current.lerp(focusSpot.pos, 0.05);
     corridorPulse.current = THREE.MathUtils.lerp(corridorPulse.current, isThinking ? 1.0 : 0.0, 0.08);
     corridorTrail.current = THREE.MathUtils.lerp(corridorTrail.current, isFlashing ? 1.0 : 0.15, 0.05);
@@ -140,13 +136,11 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
 
             void main() {
               vec3 pos = position;
-              // Latido sutil
               pos += normalize(position) * sin(uTime * 2.0 + aRandom * 10.0) * 0.002 * (1.0 + uCorridorPulse);
               
               float focus = smoothstep(0.4, 0.0, distance(pos, uFocusPoint));
               float lang = smoothstep(0.5, 0.0, distance(pos, uLanguagePoint));
               
-              // Corredor Semántico
               float corridor = smoothstep(0.15, 0.0, sdSegment(pos, uLanguagePoint, uFocusPoint));
               float cPulse = corridor * (0.4 + 0.6 * sin(uTime * 8.0 + pos.y * 15.0));
               float corridorInf = (corridor * uCorridorTrail) + (cPulse * uCorridorPulse * 0.6);
@@ -179,7 +173,8 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
             <div style={{ 
               color: spot.color, fontSize: "10px", letterSpacing: "4px", 
               opacity: isFlashing && i === targetIndex ? 1 : 0.1,
-              transition: "all 0.8s ease", pointerEvents: "none", fontStyle: "italic"
+              transition: "all 0.8s ease", pointerEvents: "none", fontStyle: "italic",
+              whiteSpace: "nowrap"
             }}>{spot.label}</div>
           </Html>
         </group>
@@ -191,7 +186,7 @@ function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], is
 export default function VisualBrain({ activeNodes, isThinking }: any) {
   return (
     <div style={{ width: "100%", height: "100vh", background: "#050608", position: "relative" }}>
-      {/* CAPA CSS: Ruido y Viñeta "Gratis" para la GPU */}
+      {/* CAPA CSS: Ruido y Viñeta */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10,
         background: 'radial-gradient(circle, transparent 20%, black 150%)',
