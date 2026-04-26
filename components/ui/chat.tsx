@@ -63,7 +63,7 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
         ]);
       }
 
-      if (Array.isArray(data.nodes) && data.nodes.length > 0) {
+      if (Array.isArray(data.nodes)) {
         onNewResponse(data.nodes);
       } else {
         onNewResponse([]);
