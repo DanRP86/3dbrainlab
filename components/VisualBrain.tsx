@@ -100,8 +100,22 @@ function AmbientNoiseField({
     return geo;
   }, []);
 
+  const ambientUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uThinking: { value: 0 },
+      uLife: { value: 1 },
+      uColorA: { value: new THREE.Color("#0f1722") },
+      uColorB: { value: new THREE.Color("#38556f") },
+    }),
+    []
+  );
+
   useFrame((state) => {
     if (!pointsRef.current) return;
+
+    console.log("tick ambient", state.clock.getElapsedTime());
+
     const mat = pointsRef.current.material as THREE.ShaderMaterial;
     mat.uniforms.uTime.value = state.clock.getElapsedTime();
     mat.uniforms.uThinking.value = THREE.MathUtils.lerp(
@@ -119,13 +133,7 @@ function AmbientNoiseField({
         depthWrite={false}
         depthTest={true}
         blending={THREE.AdditiveBlending}
-        uniforms={{
-          uTime: { value: 0 },
-          uThinking: { value: 0 },
-          uLife: { value: 1 },
-          uColorA: { value: new THREE.Color("#0f1722") },
-          uColorB: { value: new THREE.Color("#38556f") },
-        }}
+        uniforms={ambientUniforms}
         vertexShader={`
           uniform float uTime;
           uniform float uThinking;
@@ -373,7 +381,36 @@ function BrainSculpture({
   const currentFocusPoint = useRef(new THREE.Vector3());
   const currentIntensity = useRef(0.62);
   const currentColor = useRef(new THREE.Color(CONCEPTS[0].color));
-
+  const shellUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uPulse: { value: 0.72 },
+      uBreath: { value: 0.5 },
+      uThinkingBoost: { value: 0 },
+      uColor: { value: new THREE.Color(CONCEPTS[0].color) },
+    }),
+    []
+  );
+  
+  const mainUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uBreath: { value: 0.5 },
+      uThinkingBoost: { value: 0 },
+      uFocusPoint: { value: new THREE.Vector3() },
+      uFocusIntensity: { value: 0.62 },
+      uRayPos: { value: new THREE.Vector3() },
+      uRayActive: { value: 0 },
+      uProbePos: {
+        value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()],
+      },
+      uProbeWeight: { value: [0, 0, 0] },
+      uColorBase: { value: new THREE.Color("#1a1d24") },
+      uColorProbe: { value: new THREE.Color("#8590a1") },
+      uColorFocus: { value: new THREE.Color(CONCEPTS[0].color) },
+    }),
+    []
+  );
   const data = useMemo(() => {
     if (!scene) return null;
 
@@ -622,13 +659,7 @@ function BrainSculpture({
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-          uniforms={{
-            uTime: { value: 0 },
-            uPulse: { value: 0.72 },
-            uBreath: { value: 0.5 },
-            uThinkingBoost: { value: 0 },
-            uColor: { value: new THREE.Color(CONCEPTS[0].color) },
-          }}
+          uniforms={shellUniforms}
           vertexShader={`
             uniform float uTime;
             uniform float uPulse;
@@ -672,22 +703,7 @@ function BrainSculpture({
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-          uniforms={{
-            uTime: { value: 0 },
-            uBreath: { value: 0.5 },
-            uThinkingBoost: { value: 0 },
-            uFocusPoint: { value: new THREE.Vector3() },
-            uFocusIntensity: { value: 0.62 },
-            uRayPos: { value: new THREE.Vector3() },
-            uRayActive: { value: 0 },
-            uProbePos: {
-              value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()],
-            },
-            uProbeWeight: { value: [0, 0, 0] },
-            uColorBase: { value: new THREE.Color("#1a1d24") },
-            uColorProbe: { value: new THREE.Color("#8590a1") },
-            uColorFocus: { value: new THREE.Color(CONCEPTS[0].color) },
-          }}
+          uniforms={mainUniforms}
           vertexShader={`
             uniform float uTime;
             uniform float uBreath;
