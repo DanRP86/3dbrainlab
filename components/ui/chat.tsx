@@ -14,7 +14,12 @@ interface ChatProps {
 }
 
 export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: 'assistant',
+      content: "Hi, I'm Daniel's digital twin. Ask me about AI, operations, PMI, engineering, real estate, or personal projects.",
+    },
+  ]);  
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -35,13 +40,21 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
     setIsThinking(true);
 
     try {
-      const response = await fetch('/api/chat', {
+        const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedMessages.slice(-8),
         }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.details || data?.error || 'Error calling /api/chat');
+      }
+
+      console.log('API data:', data);
 
       const data = await response.json();
       console.log('API data:', data);
