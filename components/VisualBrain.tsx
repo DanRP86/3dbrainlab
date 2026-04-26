@@ -96,11 +96,11 @@ function AmbientNoiseField({ thinking = 0 }: { thinking?: number }) {
 
             float pulse = 0.5 + 0.5 * sin(uTime * 0.9 + aRandom * 20.0);
             vMix = 0.25 + 0.75 * pulse;
-            vAlpha = (0.05 + pulse * 0.07 + uThinking * 0.04) * (0.55 + aRandom * 0.45);
+            vAlpha = (0.12 + pulse * 0.12 + uThinking * 0.08) * (0.7 + aRandom * 0.5);
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (1.0 + aScale * 1.6 + uThinking * 0.5) * (13.0 / -mvPosition.z);
+            gl_PointSize = (2.0 + aScale * 2.4 + uThinking * 1.0) * (18.0 / -mvPosition.z);
           }
         `}
         fragmentShader={`
@@ -373,8 +373,8 @@ function BrainSculpture({
                 sin(uTime * 0.9 + pos.x * 9.0 + aRandom * 8.28)
               ) * 0.0022 * mix(0.3, 1.0, edge);
 
-              float focus = smoothstep(0.42, 0.0, distance(pos, uFocusPoint)) * uCorridorTrail;
-              float lang = smoothstep(0.55, 0.0, distance(pos, uLanguagePoint));
+              float focus = smoothstep(0.75, 0.0, distance(pos, uFocusPoint)) * uCorridorTrail;
+              float lang = smoothstep(0.65, 0.0, distance(pos, uLanguagePoint));
 
               float corridor = smoothstep(0.18, 0.0, sdSegment(pos, uLanguagePoint, uFocusPoint));
 
@@ -396,7 +396,7 @@ function BrainSculpture({
 
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = (1.25 + vLang * 1.35 + vInfluence * 7.8) * (24.0 / -mvPosition.z);
+              gl_PointSize = (2.2 + vLang * 2.5 + vInfluence * 12.0) * (30.0 / -mvPosition.z);
             }
           `}
           fragmentShader={`
@@ -418,7 +418,7 @@ function BrainSculpture({
               color = mix(color, uColorFocus, vInfluence);
               color += core * (vInfluence * 0.35 + vLang * 0.08);
 
-              float alpha = (0.10 + vLang * 0.18 + vInfluence * 0.82) * soft;
+              float alpha = (0.22 + vLang * 0.28 + vInfluence * 1.05) * soft;
               gl_FragColor = vec4(color, alpha);
             }
           `}
