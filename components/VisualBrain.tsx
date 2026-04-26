@@ -161,7 +161,7 @@ function AmbientNoiseField({
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (2.2 + aScale * 2.4 + uThinking * 0.9) * (18.0 / -mvPosition.z);
+            gl_PointSize = (3.2 + aScale * 3.6 + uThinking * 1.3) * (22.0 / -mvPosition.z);
           }
         `}
         fragmentShader={`
@@ -180,7 +180,7 @@ function AmbientNoiseField({
             vec3 color = mix(uColorA, uColorB, vMix);
             color += core * 0.05;
 
-            gl_FragColor = vec4(color, vAlpha * soft * 0.72);
+            gl_FragColor = vec4(color, vAlpha * soft * 1.08);
           }
         `}
       />
@@ -356,6 +356,7 @@ function BrainSculpture({
   const { scene } = useGLTF("/Brain_Model.glb");
 
   const mainMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const shellMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -552,6 +553,15 @@ function BrainSculpture({
     if (!data?.hotspots?.length || !mainMaterialRef.current) return;
 
     const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      const baseScale = 2.9;
+      const breath = 1 + Math.sin(t * 0.9) * (isThinking ? 0.035 : 0.02);
+      groupRef.current.scale.setScalar(baseScale * breath);
+    
+      groupRef.current.position.y = Math.sin(t * 0.55) * 0.045;
+      groupRef.current.rotation.z = Math.sin(t * 0.32) * 0.03;
+      groupRef.current.rotation.x = Math.cos(t * 0.24) * 0.02;
+    }
     const idle = Date.now() - lastNodeUpdateRef.current > 2500;
 
     let focusIndex =
@@ -652,7 +662,7 @@ function BrainSculpture({
   const destinationSpot = hotspots[targetIndex];
 
   return (
-    <group scale={2.9}>
+    <group ref={groupRef} scale={2.9}>
       <points geometry={fusedGeometry} renderOrder={1}>
         <shaderMaterial
           ref={shellMaterialRef}
@@ -733,7 +743,7 @@ function BrainSculpture({
               float fineJitter =
                 sin(uTime * 1.8 + pos.z * 11.0 + aRandom * 9.2831) * 0.0015;
 
-              float breathPush = (0.0052 + uThinkingBoost * 0.0022) * (0.6 + uBreath * 0.8);
+              float breathPush = (0.012 + uThinkingBoost * 0.004) * (0.8 + uBreath * 1.1);
 
               pos += normalize(position) * (slowWave + fineJitter + breathPush * edge);
 
