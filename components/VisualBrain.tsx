@@ -3,6 +3,7 @@
 import React, { useRef, useMemo, Suspense, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Html, OrbitControls } from "@react-three/drei";
+import { EffectComposer, Bloom, Noise } from "@react-three/postprocessing";
 import * as THREE from "three";
 
 const CONCEPTS = [
@@ -86,7 +87,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
         uniforms={{
           uTime: { value: 0 }, uProgress: { value: 0 }, uEnergy: { value: 0 },
           uColor: { value: new THREE.Color(color) }, uMode: { value: kind === "probe" ? 0 : 1 },
-          uThickness: { value: kind === "probe" ? 3.5 : 6.0 }, uSeed: { value: seed }, // Tamaños aumentados
+          uThickness: { value: kind === "probe" ? 2.5 : 4.0 }, uSeed: { value: seed },
         }}
         vertexShader={`
           uniform float uTime; uniform float uProgress; uniform float uEnergy; uniform float uMode; uniform float uThickness; uniform float uSeed;
@@ -103,7 +104,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
             vAlpha = body * uEnergy;
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = (1.2 + vAlpha * uThickness) * (26.0 / -mvPosition.z); // Glow nativo
+            gl_PointSize = (1.2 + vAlpha * uThickness) * (26.0 / -mvPosition.z); 
           }
         `}
         fragmentShader={`
@@ -113,7 +114,7 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
             float d = length(gl_PointCoord - vec2(0.5));
             float soft = 1.0 - smoothstep(0.0, 0.5, d);
             float core = 1.0 - smoothstep(0.0, 0.18, d);
-            gl_FragColor = vec4(uColor * (0.8 + core * 0.5), soft * vAlpha * 0.85); // Alpha potenciado
+            gl_FragColor = vec4(uColor * (0.8 + core * 0.5), soft * vAlpha * 0.85); 
           }
         `}
       />
@@ -121,14 +122,17 @@ function SemanticFilament({ start, end, color, active, seed, kind, onHeadUpdate 
   );
 }
 
-function BrainSculpture() {
+// Pasamos activeNodes y isThinking a la escultura
+function BrainSculpture({ activeNodes, isThinking }: { activeNodes: number[], isThinking: boolean }) {
   const { scene } = useGLTF("/Brain_Model.glb");
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  
   const [currentIndex, setCurrentIndex] = useState(0);
   const [targetIndex, setTargetIndex] = useState(1);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [probeTargets, setProbeTargets] = useState<number[]>([]);
   const [phase, setPhase] = useState<Phase>("settle");
+  
   const currentIndexRef = useRef(0);
   const probeHeads = useRef([{ pos: new THREE.Vector3(), active: 0 }, { pos: new THREE.Vector3(), active: 0 }, { pos: new THREE.Vector3(), active: 0 }]);
   const transferHead = useRef({ pos: new THREE.Vector3(), active: 0 });
@@ -139,7 +143,6 @@ function BrainSculpture() {
   const { fusedGeometry, hotspots } = useMemo(() => {
     if (!scene) return { fusedGeometry: null, hotspots: [] };
 
-    // Método manual blindado (evita fallos de mergeGeometries)
     const positionsArray: number[] = [];
     scene.traverse((child: any) => {
       if (child.isMesh && child.geometry && child.geometry.attributes.position) {
@@ -193,8 +196,28 @@ function BrainSculpture() {
     return { fusedGeometry: fusedGeo, hotspots: spots };
   }, [scene]);
 
+  // EL CEREBRO ESCUCHA AL CHAT
   useEffect(() => {
-    if (!hotspots || hotspots.length === 0) return;
+    if (activeNodes && activeNodes.length > 0 && hotspots.length > 0) {
+      const primaryTarget = activeNodes[0];
+      if (primaryTarget < hotspots.length) {
+        setTargetIndex(primaryTarget);
+        setSelectedIndex(primaryTarget);
+        setPhase("transfer"); // Dispara la animación visual
+        
+        // Asentamos el nuevo color después de la transferencia
+        setTimeout(() => {
+          currentIndexRef.current = primaryTarget;
+          setCurrentIndex(primaryTarget);
+          setPhase("settle");
+        }, 2500);
+      }
+    }
+  }, [activeNodes, hotspots]);
+
+  // Si el cerebro está en pausa sin chat, lo movemos lentamente
+  useEffect(() => {
+    if (!hotspots || hotspots.length === 0 || activeNodes.length > 0) return;
     let timers: any[] = [];
     const runCycle = () => {
       const from = currentIndexRef.current;
@@ -208,7 +231,7 @@ function BrainSculpture() {
     };
     timers.push(setTimeout(() => runCycle(), 900));
     return () => timers.forEach(clearTimeout);
-  }, [hotspots]);
+  }, [hotspots, activeNodes]);
 
   useFrame((state) => {
     if (!materialRef.current || !hotspots || hotspots.length === 0) return;
@@ -216,10 +239,14 @@ function BrainSculpture() {
     const focusSpot = hotspots[focusIndex];
     if (!focusSpot) return;
 
+    // Si la IA está "pensando", aumentamos la intensidad general del cerebro
+    const baseThinkingGlow = isThinking ? 0.6 : 0;
     const desiredIntensity = phase === "probing" ? 0.25 : phase === "selecting" ? 0.55 : phase === "transfer" ? 0.9 : 1.0;
+    
     currentFocusPoint.current.lerp(focusSpot.pos, phase === "transfer" ? 0.06 : 0.035);
-    currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity, 0.08);
+    currentIntensity.current = THREE.MathUtils.lerp(currentIntensity.current, desiredIntensity + baseThinkingGlow, 0.08);
     currentColor.current.lerp(new THREE.Color(focusSpot.color), 0.04);
+    
     const uniforms = materialRef.current.uniforms;
     uniforms.uTime.value = state.clock.getElapsedTime();
     uniforms.uFocusPoint.value.copy(currentFocusPoint.current);
@@ -246,8 +273,10 @@ function BrainSculpture() {
             uTime: { value: 0 }, uFocusPoint: { value: new THREE.Vector3() }, uFocusIntensity: { value: 0 },
             uRayPos: { value: new THREE.Vector3() }, uRayActive: { value: 0 },
             uProbePos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
-            uProbeWeight: { value: [0, 0, 0] }, uColorBase: { value: new THREE.Color("#1d1e22") },
-            uColorProbe: { value: new THREE.Color("#6e7481") }, uColorFocus: { value: new THREE.Color("#aaaaaa") },
+            uProbeWeight: { value: [0, 0, 0] }, 
+            uColorBase: { value: new THREE.Color("#181a20") }, // Fondo fantasmal tenue
+            uColorProbe: { value: new THREE.Color("#4a5568") }, 
+            uColorFocus: { value: new THREE.Color("#ffffff") }, // Blanco brillante activo
           }}
           vertexShader={`
             uniform float uTime; uniform vec3 uFocusPoint; uniform float uFocusIntensity; uniform vec3 uRayPos; uniform float uRayActive; uniform vec3 uProbePos[3]; uniform float uProbeWeight[3];
@@ -266,8 +295,7 @@ function BrainSculpture() {
               vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
               gl_Position = projectionMatrix * mvPosition;
               
-              // Tamaño de puntos aumentado para compensar falta de Bloom
-              float size = 1.8 + vProbe * 3.0 + vRay * 6.0 + vFocus * 4.0;
+              float size = 1.4 + vProbe * 2.5 + vRay * 5.0 + vFocus * 4.5;
               gl_PointSize = size * (24.0 / -mvPosition.z);
             }
           `}
@@ -281,9 +309,9 @@ function BrainSculpture() {
               float core = 1.0 - smoothstep(0.0, 0.16, d);
               vec3 color = mix(mix(uColorBase, uColorProbe, vProbe * 0.7), uColorFocus, max(vFocus, vRay));
               
-              // Alpha aumentado para brillo natural
-              float alpha = (0.12 + vProbe * 0.25 + vFocus * 0.35 + vRay * 0.8) * soft;
-              gl_FragColor = vec4(color + core * (vRay * 0.6 + vFocus * 0.25), alpha);
+              // 0.15 de alpha base para que se vea ligeramente el resto del cerebro
+              float alpha = (0.15 + vProbe * 0.25 + vFocus * 0.5 + vRay * 0.8) * soft;
+              gl_FragColor = vec4(color + core * (vRay * 0.6 + vFocus * 0.35), alpha);
             }
           `}
         />
@@ -312,11 +340,16 @@ export default function VisualBrain({ activeNodes, isThinking }: { activeNodes: 
     <div style={{ width: "100%", height: "100vh", background: "#060708", position: "relative" }}>
       <Canvas 
         camera={{ position: [0, 0, 8.5], fov: 28 }}
-        gl={{ antialias: true, alpha: false }} 
+        gl={{ antialias: false, alpha: false }} // Optimizado
         dpr={[1, 2]}
       >
         <Suspense fallback={null}>
-          <BrainSculpture />
+          <BrainSculpture activeNodes={activeNodes} isThinking={isThinking} />
+          {/* Vuelve la magia del post-procesado de forma segura */}
+          <EffectComposer disableNormalPass> 
+            <Bloom luminanceThreshold={0.2} mipmapBlur intensity={1.5} radius={0.4} />
+            <Noise opacity={0.06} />
+          </EffectComposer>
         </Suspense>
         <OrbitControls enableDamping dampingFactor={0.05} minDistance={4} maxDistance={15} />
       </Canvas>
