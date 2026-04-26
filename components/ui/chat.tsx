@@ -56,9 +56,6 @@ export default function Chat({ onNewResponse, isThinking, setIsThinking }: ChatP
 
       console.log('API data:', data);
 
-      const data = await response.json();
-      console.log('API data:', data);
-
       if (data.content) {
         setMessages(prev => [
           ...prev,
